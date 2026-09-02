@@ -1,0 +1,9 @@
+.git
+**/node_modules
+**/dist
+data/
+storage/
+acme.sh/
+*.log
+.DS_Store
+.env

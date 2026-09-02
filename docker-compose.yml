@@ -1,0 +1,22 @@
+services:
+  acme-manager:
+    build: .
+    image: acme-manager:latest
+    container_name: acme-manager
+    restart: unless-stopped
+    ports:
+      # Web UI 只绑定本机；如需局域网访问请改成 "8080:3000"，并用反向代理加认证
+      - "127.0.0.1:8080:3000"
+      # HTTP-01 standalone 验证需要容器的 80 端口可达；只用 DNS-01 时可删除此行
+      - "80:80"
+    environment:
+      - TZ=Asia/Shanghai
+      # 每天凌晨 3 点扫描续期（可改，如 "30 4 * * *"）
+      # - RENEW_CRON=0 3 * * *
+    volumes:
+      # SQLite 数据库（证书配置 / DNS 凭据 / 日志）
+      - ./data:/app/data
+      # 签发好的证书文件（fullchain.pem / privkey.pem ...）
+      - ./storage:/app/storage
+      # acme.sh 自身目录（账户、ACME 状态），与宿主机 ~/.acme.sh 互不影响
+      - ./acme.sh:/app/acme.sh
