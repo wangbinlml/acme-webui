@@ -137,11 +137,7 @@ EXPOSE 3000 80
 # 持久化目录
 # ============================================================
 
-VOLUME [
-    "/app/data",
-    "/app/storage",
-    "/app/acme.sh"
-]
+VOLUME ["/app/data", "/app/storage","/app/acme.sh"]
 
 
 ENTRYPOINT ["docker-entrypoint.sh"]

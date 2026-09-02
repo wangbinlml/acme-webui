@@ -45,6 +45,7 @@
 ```bash
 git clone <repo> acme-manager && cd acme-manager
 docker compose up -d --build
+docker compose down
 ```
 
 打开 http://127.0.0.1:28080 （默认只绑定本机回环地址）。
