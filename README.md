@@ -46,7 +46,7 @@ git clone <repo> acme-manager && cd acme-manager
 docker compose up -d --build
 ```
 
-打开 http://127.0.0.1:8080 （默认只绑定本机回环地址）。
+打开 http://127.0.0.1:28080 （默认只绑定本机回环地址）。
 
 使用流程：
 
@@ -123,7 +123,7 @@ acme-manager/
 
 ## 安全说明
 
-- **v1 未内置登录认证**：默认 compose 只把 Web UI 绑定到 `127.0.0.1:8080`。需要远程访问时，请置于 Nginx/Caddy 反向代理之后自行加 Basic Auth / 内网 VPN
+- **v1 未内置登录认证**：默认 compose 只把 Web UI 绑定到 `127.0.0.1:28080`。需要远程访问时，请置于 Nginx/Caddy 反向代理之后自行加 Basic Auth / 内网 VPN
 - **DNS 凭据与通知密钥保存在 SQLite 中（明文）**：包括 DNS Provider 凭据、通知 Webhook 地址（含企微 key / 飞书 token）、飞书签名密钥。请确保 `./data` 目录权限受控；DNS 凭据泄露等同于域名解析控制权泄露
 - **私钥文件**：`storage/certificates/<id>/privkey.pem` 为明文私钥，备份/迁移时注意权限
 
