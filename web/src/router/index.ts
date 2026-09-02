@@ -1,8 +1,10 @@
 import { createRouter, createWebHistory } from 'vue-router';
+import { authChecked, currentUser, fetchMe } from '../auth';
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
+    { path: '/login', name: 'login', component: () => import('../views/LoginView.vue'), meta: { title: '登录' } },
     { path: '/', name: 'dashboard', component: () => import('../views/DashboardView.vue'), meta: { title: '仪表盘' } },
     {
       path: '/certificates',
@@ -14,7 +16,7 @@ const router = createRouter({
       path: '/certificates/create',
       name: 'cert-create',
       component: () => import('../views/CreateCertificateView.vue'),
-      meta: { title: '创建证书' },
+      meta: { title: '创建证书', requiresAdmin: true },
     },
     {
       path: '/certificates/:id',
@@ -24,9 +26,25 @@ const router = createRouter({
     },
     { path: '/dns', name: 'dns', component: () => import('../views/DnsProvidersView.vue'), meta: { title: 'DNS API' } },
     { path: '/logs', name: 'logs', component: () => import('../views/LogsView.vue'), meta: { title: '日志' } },
+    {
+      path: '/users',
+      name: 'users',
+      component: () => import('../views/UsersView.vue'),
+      meta: { title: '用户管理', requiresAdmin: true },
+    },
     { path: '/settings', name: 'settings', component: () => import('../views/SettingsView.vue'), meta: { title: '设置' } },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
+});
+
+router.beforeEach(async (to) => {
+  if (to.path === '/login') return true;
+  if (!authChecked.value) await fetchMe();
+  if (!currentUser.value) {
+    return to.fullPath === '/' ? { path: '/login' } : { path: '/login', query: { redirect: to.fullPath } };
+  }
+  if (to.meta.requiresAdmin && currentUser.value.role !== 'admin') return { path: '/' };
+  return true;
 });
 
 export default router;

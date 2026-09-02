@@ -1,5 +1,17 @@
 export type DisplayStatus = 'issuing' | 'ok' | 'expiring' | 'expired' | 'error';
 
+export type UserRole = 'admin' | 'viewer';
+
+export interface AuthUser {
+  id: number;
+  username: string;
+  role: UserRole;
+}
+
+export interface UserView extends AuthUser {
+  createdAt: string;
+}
+
 export interface CertificateView {
   id: number;
   primaryDomain: string;

@@ -10,6 +10,9 @@ import { certificates } from './db/schema.js';
 import { logEvent } from './services/logger.js';
 import { enqueue } from './services/queue.js';
 import { runRenewalScan } from './services/cert-ops.js';
+import { getSessionUser, readSessionCookie } from './services/auth.js';
+import { authRoutes } from './routes/auth.js';
+import { userRoutes } from './routes/users.js';
 import { certificateRoutes } from './routes/certificates.js';
 import { dnsProviderRoutes } from './routes/dns-providers.js';
 import { dashboardRoutes } from './routes/dashboard.js';
@@ -38,6 +41,32 @@ async function main(): Promise<void> {
     acmeAvailable: acmeAvailable(),
   }));
 
+  // 认证与角色控制：除下列公开端点外，所有 /api 请求都需要登录会话
+  const PUBLIC_API = new Set(['/api/health', '/api/auth/status', '/api/auth/login', '/api/auth/setup']);
+  app.addHook('onRequest', async (req, reply) => {
+    const url = (req.raw.url ?? '').split('?')[0];
+    if (!url.startsWith('/api/') || PUBLIC_API.has(url)) return;
+
+    const token = readSessionCookie(req.headers.cookie);
+    const user = token ? getSessionUser(token) : null;
+    if (!user) return reply.code(401).send({ error: '未登录或会话已过期' });
+    req.user = user;
+
+    // /api/auth/* 只要求已登录（改自己密码/登出不分角色）；
+    // 其余接口：viewer 只读；用户管理仅 admin
+    if (url.startsWith('/api/auth/')) return;
+    if (user.role !== 'admin') {
+      if (url.startsWith('/api/users')) {
+        return reply.code(403).send({ error: '需要管理员权限' });
+      }
+      if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+        return reply.code(403).send({ error: '当前账号为只读角色（viewer），仅管理员可执行此操作' });
+      }
+    }
+  });
+
+  await app.register(authRoutes, { prefix: '/api' });
+  await app.register(userRoutes, { prefix: '/api' });
   await app.register(dashboardRoutes, { prefix: '/api' });
   await app.register(certificateRoutes, { prefix: '/api' });
   await app.register(dnsProviderRoutes, { prefix: '/api' });

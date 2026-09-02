@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { api } from '../api';
 import type { DnsProviderView, ProviderTypeDef } from '../types';
+import { canWrite } from '../auth';
 import { errMessage, formatDate } from '../utils';
 
 const providers = ref<DnsProviderView[]>([]);
@@ -130,7 +131,7 @@ function credentialEntries(row: DnsProviderView): string[] {
     <template #header>
       <div class="card-header">
         <span>DNS Providers</span>
-        <el-button type="primary" icon="Plus" @click="openCreate">添加</el-button>
+        <el-button v-if="canWrite()" type="primary" icon="Plus" @click="openCreate">添加</el-button>
       </div>
     </template>
     <el-table v-loading="loading" :data="providers">
@@ -151,6 +152,7 @@ function credentialEntries(row: DnsProviderView): string[] {
       <el-table-column label="操作" width="200" fixed="right">
         <template #default="{ row }">
           <el-button
+            v-if="canWrite()"
             link
             type="primary"
             size="small"
@@ -159,13 +161,13 @@ function credentialEntries(row: DnsProviderView): string[] {
           >
             测试连接
           </el-button>
-          <el-button link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
-          <el-button link type="danger" size="small" @click="remove(row)">删除</el-button>
+          <el-button v-if="canWrite()" link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
+          <el-button v-if="canWrite()" link type="danger" size="small" @click="remove(row)">删除</el-button>
         </template>
       </el-table-column>
       <template #empty>
         <el-empty description="还没有 DNS Provider">
-          <el-button type="primary" @click="openCreate">添加</el-button>
+          <el-button v-if="canWrite()" type="primary" @click="openCreate">添加</el-button>
         </el-empty>
       </template>
     </el-table>

@@ -3,6 +3,7 @@ import { onMounted, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { api } from '../api';
 import type { SettingsData } from '../types';
+import { canWrite } from '../auth';
 import { errMessage } from '../utils';
 
 const settings = ref<SettingsData | null>(null);
@@ -103,7 +104,7 @@ async function runCheck(): Promise<void> {
             </div>
           </el-form-item>
           <el-form-item>
-            <el-button type="primary" :loading="saving" @click="save">保存</el-button>
+            <el-button v-if="canWrite()" type="primary" :loading="saving" @click="save">保存</el-button>
           </el-form-item>
         </el-form>
       </el-card>
@@ -125,7 +126,7 @@ async function runCheck(): Promise<void> {
           <el-descriptions-item label="版本">v{{ settings?.version ?? '-' }}</el-descriptions-item>
         </el-descriptions>
         <div style="margin-top: 16px">
-          <el-button type="primary" :loading="running" @click="runCheck">立即执行续期检查</el-button>
+          <el-button v-if="canWrite()" type="primary" :loading="running" @click="runCheck">立即执行续期检查</el-button>
           <span class="muted small">执行过程可在「日志」页查看</span>
         </div>
       </el-card>
@@ -162,7 +163,7 @@ async function runCheck(): Promise<void> {
               <div class="form-tip">若机器人使用「自定义关键词」校验，请把关键词设为 Acme Manager</div>
             </el-form-item>
           </template>
-          <el-form-item>
+          <el-form-item v-if="canWrite()">
             <el-button type="primary" :loading="savingNotify" @click="saveNotify">保存</el-button>
             <el-button :loading="testing" :disabled="!notifyForm.channel" @click="testNotify">保存并发送测试</el-button>
             <span class="muted small">续期成功 / 失败都会推送到群</span>

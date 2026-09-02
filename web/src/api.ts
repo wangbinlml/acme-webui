@@ -1,4 +1,5 @@
 import type {
+  AuthUser,
   CertificateView,
   CertInfo,
   DashboardData,
@@ -6,6 +7,7 @@ import type {
   PersistedLog,
   ProviderTypeDef,
   SettingsData,
+  UserView,
 } from './types';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -14,6 +16,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (init?.body && !headers['content-type']) headers['content-type'] = 'application/json';
   const res = await fetch(path, { ...init, headers });
   if (!res.ok) {
+    // 会话过期：除登录页外统一跳登录页（带当前路径，登录后回来）
+    if (res.status === 401 && !window.location.pathname.startsWith('/login')) {
+      window.location.assign(`/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+    }
     let message = `请求失败（HTTP ${res.status}）`;
     try {
       const body = (await res.json()) as { error?: string };
@@ -92,4 +98,20 @@ export const api = {
   testNotify: () =>
     request<{ ok: boolean; message: string }>('/api/settings/notify/test', { method: 'POST' }),
   runRenewScan: () => request<{ started: boolean; message: string }>('/api/renew/run', { method: 'POST' }),
+
+  authStatus: () => request<{ needsSetup: boolean }>('/api/auth/status'),
+  setup: (payload: { username: string; password: string }) =>
+    request<{ user: AuthUser }>('/api/auth/setup', { method: 'POST', body: JSON.stringify(payload) }),
+  login: (payload: { username: string; password: string }) =>
+    request<{ user: AuthUser }>('/api/auth/login', { method: 'POST', body: JSON.stringify(payload) }),
+  logout: () => request<{ ok: boolean }>('/api/auth/logout', { method: 'POST' }),
+  me: () => request<{ user: AuthUser | null }>('/api/auth/me'),
+  changePassword: (payload: { oldPassword: string; newPassword: string }) =>
+    request<{ ok: boolean }>('/api/auth/password', { method: 'PUT', body: JSON.stringify(payload) }),
+  listUsers: () => request<{ users: UserView[] }>('/api/users'),
+  createUser: (payload: { username: string; password: string; role: string }) =>
+    request<{ user: AuthUser }>('/api/users', { method: 'POST', body: JSON.stringify(payload) }),
+  updateUser: (id: number, patch: { role?: string; password?: string }) =>
+    request<{ ok: boolean }>(`/api/users/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
+  deleteUser: (id: number) => request<{ ok: boolean }>(`/api/users/${id}`, { method: 'DELETE' }),
 };

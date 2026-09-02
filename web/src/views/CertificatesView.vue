@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { api } from '../api';
 import type { CertificateView } from '../types';
+import { canWrite } from '../auth';
 import StatusTag from '../components/StatusTag.vue';
 import { caLabel, challengeLabel, daysLeftText, errMessage, formatDateOnly, keyTypeLabel } from '../utils';
 
@@ -91,7 +92,7 @@ function download(row: CertificateView, type: string): void {
       <template #header>
         <div class="card-header">
           <span>全部证书</span>
-          <el-button type="primary" icon="Plus" @click="router.push('/certificates/create')">创建证书</el-button>
+          <el-button v-if="canWrite()" type="primary" icon="Plus" @click="router.push('/certificates/create')">创建证书</el-button>
         </div>
       </template>
       <el-table v-loading="loading" :data="certs">
@@ -127,7 +128,7 @@ function download(row: CertificateView, type: string): void {
           <template #default="{ row }">
             <el-switch
               :model-value="row.autoRenew"
-              :disabled="row.status === 'issuing'"
+              :disabled="row.status === 'issuing' || !canWrite()"
               @change="(value: any) => toggleAutoRenew(row, Boolean(value))"
             />
           </template>
@@ -135,10 +136,10 @@ function download(row: CertificateView, type: string): void {
         <el-table-column label="操作" width="300" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="router.push(`/certificates/${row.id}`)">详情</el-button>
-            <el-button link type="primary" size="small" :disabled="row.status === 'issuing'" @click="renew(row)">
+            <el-button v-if="canWrite()" link type="primary" size="small" :disabled="row.status === 'issuing'" @click="renew(row)">
               续期
             </el-button>
-            <el-button link type="warning" size="small" :disabled="row.status === 'issuing'" @click="reissue(row)">
+            <el-button v-if="canWrite()" link type="warning" size="small" :disabled="row.status === 'issuing'" @click="reissue(row)">
               重新签发
             </el-button>
             <el-dropdown @command="(cmd: string) => download(row, cmd)">
@@ -154,14 +155,14 @@ function download(row: CertificateView, type: string): void {
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
-            <el-button link type="danger" size="small" :disabled="row.status === 'issuing'" @click="remove(row)">
+            <el-button v-if="canWrite()" link type="danger" size="small" :disabled="row.status === 'issuing'" @click="remove(row)">
               删除
             </el-button>
           </template>
         </el-table-column>
         <template #empty>
           <el-empty description="还没有证书">
-            <el-button type="primary" @click="router.push('/certificates/create')">创建证书</el-button>
+            <el-button v-if="canWrite()" type="primary" @click="router.push('/certificates/create')">创建证书</el-button>
           </el-empty>
         </template>
       </el-table>

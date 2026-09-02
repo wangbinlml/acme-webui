@@ -13,6 +13,7 @@
 - **自动续期**：自有数据库调度，每天 03:00 扫描，剩余天数低于阈值（默认 30，每张证书可调）自动续期，成功更新状态、失败记日志
 - **日志**：acme.sh 输出实时流（SSE，含断线回放）+ 历史日志查询
 - **通知推送**：企业微信 / 飞书群机器人，续期成功 / 失败自动推送（含域名、CA、新到期时间 / 错误摘要），飞书支持签名校验，设置页可发送测试消息
+- **多用户与登录认证**：首次访问初始化管理员；admin（全部权限）/ viewer（只读）两种角色；HttpOnly Cookie 会话（7 天）；登录失败 5 次锁定 10 分钟；用户管理页支持添加、重置密码、改角色、删除
 
 ## 架构
 
@@ -50,10 +51,11 @@ docker compose up -d --build
 
 使用流程：
 
-1. **DNS API** 页添加 DNS Provider（如 Cloudflare 的 API Token），点「测试连接」确认可用
-2. **设置** 页填写账户邮箱（ZeroSSL 必需，Let's Encrypt 建议填写）；按需在「通知推送」配置企业微信 / 飞书群机器人并点「保存并发送测试」
-3. **证书管理 → 创建证书**：填主域名 / SAN，选 CA、算法、验证方式（DNS-01 需选 Provider），创建后自动开始签发，详情页可看 acme.sh 实时输出
-4. 签发成功后即可在详情页下载 `fullchain.pem` / `privkey.pem`，或直接从宿主机 `./storage/certificates/<id>/` 取用
+1. 首次打开按提示**初始化管理员账号**（用户名 + 密码，仅一次）；其他成员可在「用户管理」页添加（可设为只读 viewer）
+2. **DNS API** 页添加 DNS Provider（如 Cloudflare 的 API Token），点「测试连接」确认可用
+3. **设置** 页填写账户邮箱（ZeroSSL 必需，Let's Encrypt 建议填写）；按需在「通知推送」配置企业微信 / 飞书群机器人并点「保存并发送测试」
+4. **证书管理 → 创建证书**：填主域名 / SAN，选 CA、算法、验证方式（DNS-01 需选 Provider），创建后自动开始签发，详情页可看 acme.sh 实时输出
+5. 签发成功后即可在详情页下载 `fullchain.pem` / `privkey.pem`，或直接从宿主机 `./storage/certificates/<id>/` 取用
 
 > HTTP-01（standalone）验证要求容器的 80 端口可以从公网访问（compose 已映射 `80:80`）；只用 DNS-01 时可删掉该映射。
 
@@ -123,7 +125,8 @@ acme-manager/
 
 ## 安全说明
 
-- **v1 未内置登录认证**：默认 compose 只把 Web UI 绑定到 `127.0.0.1:28080`。需要远程访问时，请置于 Nginx/Caddy 反向代理之后自行加 Basic Auth / 内网 VPN
+- **登录认证**：所有 API 均需登录会话（HttpOnly Cookie，7 天有效期）；同一用户名连续登录失败 5 次锁定 10 分钟；修改 / 重置密码后其他会话立即下线。会话 Cookie 未加 `Secure` 标记，公网使用请置于 HTTPS 反向代理之后，避免密码明文传输
+- **角色**：viewer 只读角色在服务端强制拦截全部写操作，前端按钮隐藏仅为体验优化
 - **DNS 凭据与通知密钥保存在 SQLite 中（明文）**：包括 DNS Provider 凭据、通知 Webhook 地址（含企微 key / 飞书 token）、飞书签名密钥。请确保 `./data` 目录权限受控；DNS 凭据泄露等同于域名解析控制权泄露
 - **私钥文件**：`storage/certificates/<id>/privkey.pem` 为明文私钥，备份/迁移时注意权限
 
@@ -132,7 +135,7 @@ acme-manager/
 - [ ] 证书自动部署：Nginx / Caddy / Docker 容器（reload 钩子）
 - [ ] Webhook 通知（签发 / 续期成功 / 失败）
 - [ ] 邮件通知（企业微信 / 飞书机器人推送已在 v1 提供）
-- [ ] 多用户与登录认证
+- [x] 多用户与登录认证（admin / viewer 角色、登录限速、用户管理）
 
 ## 技术栈
 

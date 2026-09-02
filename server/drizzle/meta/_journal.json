@@ -8,6 +8,13 @@
       "when": 1788345104775,
       "tag": "0000_large_lucky_pierre",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1788350505018,
+      "tag": "0001_condemned_mariko_yashida",
+      "breakpoints": true
     }
   ]
 }

@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { api } from '../api';
 import type { CertInfo, CertificateView } from '../types';
+import { canWrite } from '../auth';
 import StatusTag from '../components/StatusTag.vue';
 import LiveLog from '../components/LiveLog.vue';
 import { caLabel, challengeLabel, daysLeftText, errMessage, formatDate, formatDateOnly, keyTypeLabel } from '../utils';
@@ -122,8 +123,8 @@ function download(type: string): void {
       <span class="detail-domain">{{ cert.primaryDomain }}</span>
       <StatusTag :status="cert.displayStatus" />
       <div class="detail-actions">
-        <el-button type="primary" :disabled="isIssuing" @click="renew">立即续期</el-button>
-        <el-button type="warning" plain :disabled="isIssuing" @click="reissue">重新签发</el-button>
+        <el-button v-if="canWrite()" type="primary" :disabled="isIssuing" @click="renew">立即续期</el-button>
+        <el-button v-if="canWrite()" type="warning" plain :disabled="isIssuing" @click="reissue">重新签发</el-button>
         <el-dropdown @command="download">
           <el-button>
             下载 <el-icon><ArrowDown /></el-icon>
@@ -137,7 +138,7 @@ function download(type: string): void {
             </el-dropdown-menu>
           </template>
         </el-dropdown>
-        <el-button type="danger" plain :disabled="isIssuing" @click="remove">删除</el-button>
+        <el-button v-if="canWrite()" type="danger" plain :disabled="isIssuing" @click="remove">删除</el-button>
       </div>
     </div>
 
@@ -201,13 +202,13 @@ function download(type: string): void {
           <template #header>续期设置</template>
           <el-form label-width="90px" label-position="left">
             <el-form-item label="自动续期">
-              <el-switch :model-value="cert.autoRenew" :disabled="isIssuing" @change="(v: any) => saveAutoRenew(Boolean(v))" />
+              <el-switch :model-value="cert.autoRenew" :disabled="isIssuing || !canWrite()" @change="(v: any) => saveAutoRenew(Boolean(v))" />
               <span class="muted small">每天 03:00 检查（服务器时区）</span>
             </el-form-item>
             <el-form-item label="续期阈值">
-              <el-input-number v-model="renewBeforeDays" :min="1" :max="89" />
+              <el-input-number v-model="renewBeforeDays" :min="1" :max="89" :disabled="!canWrite()" />
               <span class="muted small">天前触发</span>
-              <el-button size="small" style="margin-left: 8px" @click="saveThreshold">保存</el-button>
+              <el-button v-if="canWrite()" size="small" style="margin-left: 8px" @click="saveThreshold">保存</el-button>
             </el-form-item>
           </el-form>
         </el-card>
