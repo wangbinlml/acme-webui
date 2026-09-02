@@ -58,7 +58,7 @@ docker compose down
 4. **证书管理 → 创建证书**：填主域名 / SAN，选 CA、算法、验证方式（DNS-01 需选 Provider），创建后自动开始签发，详情页可看 acme.sh 实时输出
 5. 签发成功后即可在详情页下载 `fullchain.pem` / `privkey.pem`，或直接从宿主机 `./storage/certificates/<id>/` 取用
 
-> HTTP-01（standalone）验证要求容器的 80 端口可以从公网访问（compose 已映射 `80:80`）；只用 DNS-01 时可删掉该映射。
+> HTTP-01（standalone）验证要求宿主机 80 端口空闲且公网可达，compose 默认**不映射** 80 端口（避免与服务器上已有的 Web 服务冲突，被占用时报 `bind: address already in use`）；只用 DNS-01 时无需任何改动。确需 HTTP-01 时，在 docker-compose.yml 里取消 `- "80:80"` 的注释。
 
 ## 本地开发
 

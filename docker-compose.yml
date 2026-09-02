@@ -7,8 +7,9 @@ services:
     ports:
       # Web UI 只绑定本机；如需局域网访问请改成 "28080:3000"，并用反向代理加认证
       - "127.0.0.1:28080:3000"
-      # HTTP-01 standalone 验证需要容器的 80 端口可达；只用 DNS-01 时可删除此行
-      - "80:80"
+      # HTTP-01 standalone 验证需要宿主机 80 端口空闲且公网可达；默认不占用（DNS-01 不需要）。
+      # 需要 HTTP-01 时取消下行注释（80 被占用会报 bind: address already in use）
+      # - "80:80"
     environment:
       - TZ=Asia/Shanghai
       # 每天凌晨 3 点扫描续期（可改，如 "30 4 * * *"）
