@@ -125,6 +125,32 @@ docker compose down
 
 > HTTP-01（standalone）验证要求宿主机 80 端口空闲且公网可达，compose 默认**不映射** 80 端口（避免与服务器上已有的 Web 服务冲突，被占用时报 `bind: address already in use`）；只用 DNS-01 时无需任何改动。确需 HTTP-01 时，在 docker-compose.yml 里取消 `- "80:80"` 的注释。
 
+## 多主机分发（一条命令装好）
+
+证书跑在多台服务器上时，不用逐台配部署目标：
+
+1. 「设置 → 多主机分发」创建一个**分发 Token**（只读，仅能下载证书文件，可随时吊销 / 重新生成）；
+2. 证书详情页点「分发到其他服务器」，复制生成的命令；
+3. 到每台目标服务器上以 root 执行：
+
+```bash
+# nginx / Caddy 直接装在机器上
+curl -fsSL -H 'Authorization: Bearer <token>' \
+  'http://管理机:28080/api/distribute/install.sh?domain=example.com' | sudo bash
+
+# nginx / Caddy 跑在 Docker 容器里（容器名 webserver，需自行挂载证书目录）
+curl -fsSL -H 'Authorization: Bearer <token>' \
+  'http://管理机:28080/api/distribute/install.sh?domain=example.com' | sudo bash -s -- --docker webserver
+```
+
+安装脚本会：把证书下载到 `/etc/nginx/certs/<域名>/`（加 `-s -- --dir 目录` 可改）、安装每天 04:35 的同步任务（**内容有变化才 reload**）、并立即执行一次同步。同一台机器装多张证书时，对每张证书分别执行一次命令即可（同步脚本与定时任务全局只有一份）。
+
+Web 服务器配置直接指向该目录：`ssl_certificate /etc/nginx/certs/example.com/fullchain.pem;`
+
+卸载：`rm -rf /etc/acme-distribute /usr/local/bin/acme-distribute-pull /etc/cron.d/acme-distribute /var/log/acme-distribute.log`
+
+> 吊销或重新生成 Token 后，所有机器的自动同步会失败（已下载到各机器的证书文件不受影响），需用新命令重装。
+
 ## 备份与恢复
 
 「设置」页底部「备份与恢复」可导出 tar.gz 备份，两种范围：

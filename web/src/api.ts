@@ -134,6 +134,9 @@ export const api = {
       headers: { 'content-type': 'application/gzip' },
       body: file,
     }),
+  getDistributeToken: () => request<{ token: string | null }>('/api/distribute/token'),
+  createDistributeToken: () => request<{ token: string }>('/api/distribute/token', { method: 'POST' }),
+  revokeDistributeToken: () => request<{ ok: boolean }>('/api/distribute/token', { method: 'DELETE' }),
   runRenewScan: () => request<{ started: boolean; message: string }>('/api/renew/run', { method: 'POST' }),
 
   health: () => request<{ ok: boolean; version: string; acmeAvailable: boolean }>('/api/health'),

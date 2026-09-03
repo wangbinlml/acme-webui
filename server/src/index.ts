@@ -11,6 +11,7 @@ import { logEvent, runLogRetention } from './services/logger.js';
 import { enqueue } from './services/queue.js';
 import { runRenewalScan } from './services/cert-ops.js';
 import { getSessionUser, readSessionCookie } from './services/auth.js';
+import { getDistributeToken } from './services/settings.js';
 import { authRoutes } from './routes/auth.js';
 import { userRoutes } from './routes/users.js';
 import { certificateRoutes } from './routes/certificates.js';
@@ -18,6 +19,7 @@ import { dnsProviderRoutes } from './routes/dns-providers.js';
 import { dashboardRoutes } from './routes/dashboard.js';
 import { logRoutes } from './routes/logs.js';
 import { settingsRoutes } from './routes/settings.js';
+import { distributeRoutes } from './routes/distribute.js';
 import { eventRoutes } from './routes/events.js';
 import { renewRoutes } from './routes/renew.js';
 
@@ -53,6 +55,20 @@ async function main(): Promise<void> {
     const url = (req.raw.url ?? '').split('?')[0];
     if (!url.startsWith('/api/') || PUBLIC_API.has(url)) return;
 
+    // 分发 Token（Authorization: Bearer）：只读证书内容与安装脚本，不授予任何其他权限
+    const authorization = req.headers.authorization ?? '';
+    if (authorization.startsWith('Bearer ')) {
+      const saved = getDistributeToken();
+      if (!saved) return reply.code(401).send({ error: '尚未创建分发 Token' });
+      if (authorization.slice(7).trim() !== saved) {
+        return reply.code(401).send({ error: '分发 Token 不正确' });
+      }
+      if (url !== '/api/distribute/file' && url !== '/api/distribute/install.sh') {
+        return reply.code(403).send({ error: '分发 Token 仅限证书分发接口' });
+      }
+      return;
+    }
+
     const token = readSessionCookie(req.headers.cookie);
     const user = token ? getSessionUser(token) : null;
     if (!user) return reply.code(401).send({ error: '未登录或会话已过期' });
@@ -78,6 +94,7 @@ async function main(): Promise<void> {
   await app.register(dnsProviderRoutes, { prefix: '/api' });
   await app.register(logRoutes, { prefix: '/api' });
   await app.register(settingsRoutes, { prefix: '/api' });
+  await app.register(distributeRoutes, { prefix: '/api' });
   await app.register(eventRoutes, { prefix: '/api' });
   await app.register(renewRoutes, { prefix: '/api' });
 

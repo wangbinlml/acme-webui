@@ -141,5 +141,6 @@ export interface SettingsData {
   acmeAvailable: boolean;
   version: string;
   logRetentionDays: number;
+  hasDistributeToken: boolean;
   notify: NotifySettings;
 }

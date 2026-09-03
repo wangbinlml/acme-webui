@@ -124,6 +124,46 @@ function channelLabel(c: string): string {
   return c === 'robot' ? '机器人' : c === 'webhook' ? 'Webhook' : '邮件';
 }
 
+async function createToken(): Promise<void> {
+  if (settings.value?.hasDistributeToken) {
+    try {
+      await ElMessageBox.confirm(
+        '重新生成后旧 Token 立即失效，所有已安装机器的自动同步会失败，需用新命令重装。确定？',
+        '重新生成 Token',
+        { type: 'warning' },
+      );
+    } catch {
+      return;
+    }
+  }
+  try {
+    await api.createDistributeToken();
+    ElMessage.success('Token 已生成，到证书详情页点「分发到其他服务器」即可生成安装命令');
+    await load();
+  } catch (e) {
+    ElMessage.error(errMessage(e));
+  }
+}
+
+async function revokeToken(): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      '吊销后所有机器的自动同步立即失败（已下载到机器上的证书文件不受影响）。确定？',
+      '吊销 Token',
+      { type: 'warning' },
+    );
+  } catch {
+    return;
+  }
+  try {
+    await api.revokeDistributeToken();
+    ElMessage.success('已吊销');
+    await load();
+  } catch (e) {
+    ElMessage.error(errMessage(e));
+  }
+}
+
 async function runCheck(): Promise<void> {
   running.value = true;
   try {
@@ -371,6 +411,31 @@ async function onRestoreFile(e: Event): Promise<void> {
               data/pre-restore-safety.tar.gz；完成后服务自动重启（Docker 部署，本地开发需手动重启后端）并要求重新登录。
             </div>
             <div v-if="restoreNote" class="restore-note">{{ restoreNote }}</div>
+          </el-form-item>
+        </el-form>
+      </el-card>
+    </el-col>
+  </el-row>
+  <el-row style="margin-top: 16px">
+    <el-col :span="24">
+      <el-card shadow="never">
+        <template #header>多主机分发</template>
+        <el-form label-width="110px" label-position="left">
+          <el-form-item label="分发 Token">
+            <el-tag :type="settings?.hasDistributeToken ? 'success' : 'info'" size="small">
+              {{ settings?.hasDistributeToken ? '已启用' : '未创建' }}
+            </el-tag>
+            <el-button v-if="canWrite()" size="small" style="margin-left: 12px" @click="createToken">
+              {{ settings?.hasDistributeToken ? '重新生成' : '创建 Token' }}
+            </el-button>
+            <el-button v-if="canWrite() && settings?.hasDistributeToken" size="small" type="danger" plain @click="revokeToken">
+              吊销
+            </el-button>
+            <div class="form-tip">
+              证书跑在多台服务器上时用：创建 Token 后，在证书详情页点「分发到其他服务器」生成一条命令，到每台目标服务器上以
+              root 执行即可（自动下载证书、每天检查更新、有变化才 reload）。Token 只能读取证书文件，无法查看或修改任何配置；
+              重新生成后旧 Token 立即失效，已安装的机器需用新命令重装。
+            </div>
           </el-form-item>
         </el-form>
       </el-card>

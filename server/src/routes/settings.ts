@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { acmeAvailable, config } from '../config.js';
-import { getAccountEmail, getSetting, setSetting } from '../services/settings.js';
+import { getAccountEmail, getDistributeToken, getSetting, setSetting } from '../services/settings.js';
 import { getLogRetentionDays, logEvent, runLogRetention } from '../services/logger.js';
 import { getNotifyConfig, sendNotification, type NotifyEvent } from '../services/notifier.js';
 import { createBackup } from '../services/backup.js';
@@ -125,6 +125,7 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     acmeAvailable: acmeAvailable(),
     version: config.version,
     logRetentionDays: getLogRetentionDays(),
+    hasDistributeToken: getDistributeToken() !== null,
     notify: notifyView(),
   }));
 

@@ -17,3 +17,9 @@ export function setSetting(key: string, value: string): void {
 export function getAccountEmail(): string | null {
   return getSetting('accountEmail');
 }
+
+/** 多主机分发 Token：只读证书内容用，空表示未创建 */
+export function getDistributeToken(): string | null {
+  const token = getSetting('distributeToken');
+  return token && token.length > 0 ? token : null;
+}

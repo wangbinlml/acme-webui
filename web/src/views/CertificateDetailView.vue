@@ -116,6 +116,53 @@ function download(type: string): void {
   window.open(`/api/certificates/${certId}/download?type=${type}`, '_blank');
 }
 
+const distributeVisible = ref(false);
+const distributeLoading = ref(false);
+const distributeToken = ref<string | null>(null);
+
+/** 安装命令里的管理机地址取自当前浏览器地址栏——管理员怎么访问，目标机器就怎么访问 */
+const distributeCmd = computed(() => {
+  const domain = cert.value?.primaryDomain ?? '';
+  const token = distributeToken.value;
+  if (!domain || !token) return '';
+  const qs = new URLSearchParams({ domain });
+  return `curl -fsSL -H 'Authorization: Bearer ${token}' '${window.location.origin}/api/distribute/install.sh?${qs.toString()}' | sudo bash`;
+});
+const distributeDockerCmd = computed(() => (distributeCmd.value ? `${distributeCmd.value} -s -- --docker <nginx容器名>` : ''));
+
+async function openDistribute(): Promise<void> {
+  distributeVisible.value = true;
+  distributeLoading.value = true;
+  try {
+    distributeToken.value = (await api.getDistributeToken()).token;
+  } catch (e) {
+    ElMessage.error(errMessage(e));
+  } finally {
+    distributeLoading.value = false;
+  }
+}
+
+async function createDistributeToken(): Promise<void> {
+  distributeLoading.value = true;
+  try {
+    distributeToken.value = (await api.createDistributeToken()).token;
+    ElMessage.success('Token 已生成');
+  } catch (e) {
+    ElMessage.error(errMessage(e));
+  } finally {
+    distributeLoading.value = false;
+  }
+}
+
+async function copyText(text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+    ElMessage.success('已复制到剪贴板');
+  } catch {
+    ElMessage.error('复制失败，请手动选择复制');
+  }
+}
+
 // ── 自动部署（多目标） ────────────────────────────────────
 interface TargetForm {
   id: string;
@@ -216,6 +263,7 @@ async function runDeployNow(): Promise<void> {
       <div class="detail-actions">
         <el-button v-if="canWrite()" type="primary" :disabled="isIssuing" @click="renew">立即续期</el-button>
         <el-button v-if="canWrite()" type="warning" plain :disabled="isIssuing" @click="reissue">重新签发</el-button>
+        <el-button v-if="canWrite()" plain @click="openDistribute">分发到其他服务器</el-button>
         <el-dropdown @command="download">
           <el-button>
             下载 <el-icon><ArrowDown /></el-icon>
@@ -389,6 +437,38 @@ async function runDeployNow(): Promise<void> {
         </el-card>
       </el-col>
     </el-row>
+
+    <el-dialog v-model="distributeVisible" title="分发到其他服务器" width="720px">
+      <div v-loading="distributeLoading">
+        <template v-if="distributeToken">
+          <el-alert
+            type="info"
+            :closable="false"
+            style="margin-bottom: 12px"
+            title="到目标服务器上以 root 执行命令即可：自动下载证书、每天 04:35 检查更新、内容有变化才 reload"
+          />
+          <div class="dist-label">nginx / Caddy 直接安装在机器上：</div>
+          <div class="dist-cmd">
+            <code>{{ distributeCmd }}</code>
+            <el-button link type="primary" size="small" @click="copyText(distributeCmd)">复制</el-button>
+          </div>
+          <div class="dist-label dist-label-gap">nginx / Caddy 跑在 Docker 容器里（把容器名替换掉）：</div>
+          <div class="dist-cmd">
+            <code>{{ distributeDockerCmd }}</code>
+            <el-button link type="primary" size="small" @click="copyText(distributeDockerCmd)">复制</el-button>
+          </div>
+          <ul class="help-list dist-label-gap">
+            <li>证书默认装到 <code>/etc/nginx/certs/{{ cert.primaryDomain }}/</code>，命令后加 <code>-s -- --dir 目录</code> 可改</li>
+            <li>Docker 场景记得让容器挂载证书目录（如 <code>./nginx-certs:/etc/nginx/certs</code>）</li>
+            <li>同一台机器装多张证书：对每张证书分别执行一次命令（定时任务只装一份，不会重复）</li>
+            <li>卸载：<code>rm -rf /etc/acme-distribute /usr/local/bin/acme-distribute-pull /etc/cron.d/acme-distribute</code></li>
+          </ul>
+        </template>
+        <el-empty v-else-if="!distributeLoading" description="尚未创建分发 Token（在「设置 → 多主机分发」创建）" :image-size="60">
+          <el-button type="primary" @click="createDistributeToken">立即创建</el-button>
+        </el-empty>
+      </div>
+    </el-dialog>
   </div>
   <el-skeleton v-else :rows="6" animated />
 </template>
@@ -495,5 +575,29 @@ async function runDeployNow(): Promise<void> {
 }
 .fingerprint {
   color: #909399;
+}
+.dist-label {
+  font-size: 12px;
+  color: #909399;
+  margin-bottom: 4px;
+}
+.dist-label-gap {
+  margin-top: 10px;
+}
+.dist-cmd {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: #f5f7fa;
+  border-radius: 4px;
+  padding: 8px 10px;
+}
+.dist-cmd code {
+  flex: 1;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  word-break: break-all;
+  white-space: pre-wrap;
 }
 </style>
