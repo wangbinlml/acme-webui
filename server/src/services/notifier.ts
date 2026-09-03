@@ -11,7 +11,8 @@ export type NotifyEventName =
   | 'cert.issue.success'
   | 'cert.issue.failed'
   | 'cert.renew.success'
-  | 'cert.renew.failed';
+  | 'cert.renew.failed'
+  | 'system.daily-digest';
 
 export interface NotifyEvent {
   event: NotifyEventName;

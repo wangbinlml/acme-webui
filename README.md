@@ -61,7 +61,9 @@ docker compose down
 
 ## 证书自动部署（Nginx / Caddy / Docker 容器）
 
-签发或续期成功后，自动把证书复制到目标目录 `<目标目录>/<主域名>/`（含 fullchain / privkey / cert / chain，私钥权限 600），并按选择的 **reload 方式**触发服务重载（平滑 reload，不断连接）：
+签发或续期成功后，自动把证书复制到各目标的 `<目标目录>/<主域名>/`（含 fullchain / privkey / cert / chain，私钥权限 600），并按该目标选择的 **reload 方式**触发服务重载（平滑 reload，不断连接）。
+
+每张证书可配置**多个部署目标**（最多 10 个，如同时发宿主机 nginx 目录和容器共享目录）：每个目标独立的目录、reload 方式与执行状态，签发/续期成功后依次执行，任一目标失败不影响其他目标；详情页逐目标显示上次部署时间与异常信息。
 
 | reload 方式 | 适用场景 | 说明 |
 |---|---|---|
@@ -115,7 +117,49 @@ docker compose down
 
 配置后可点「立即部署」验证（返回 reload 命令的完整输出），每次部署结果记录在证书详情与系统日志中；部署失败不影响证书状态本身。
 
+每次部署完成后会自动做**线上验证**：连接 `<主域名>:443` 取线上证书，与本地刚部署的证书比对 SHA-256 指纹——
+
+- reload 由本工具触发（「容器内命令」/「Docker 容器」模式）时，线上仍是旧证书会标记为部署异常并在日志告警（常见原因：reload 实际没生效、vhost 引用的路径不对、域名走了 CDN）；
+- 「仅复制」模式下只作为参考提示（reload 时机由外部决定）；
+- 域名不出网、443 不可达或通配符主域无站点时自动跳过，不影响部署结果。通配符证书基于去掉 `*.` 的主域验证。
+
 > HTTP-01（standalone）验证要求宿主机 80 端口空闲且公网可达，compose 默认**不映射** 80 端口（避免与服务器上已有的 Web 服务冲突，被占用时报 `bind: address already in use`）；只用 DNS-01 时无需任何改动。确需 HTTP-01 时，在 docker-compose.yml 里取消 `- "80:80"` 的注释。
+
+## 备份与恢复
+
+「设置」页底部「备份与恢复」可导出 tar.gz 备份，两种范围：
+
+| 范围 | 内容 | 用途 |
+|---|---|---|
+| 完整备份 | `data/acme.db`（数据库）+ `storage/`（全部证书与私钥）+ `acme.sh/`（ACME 账户） | 整机迁移、灾备恢复 |
+| 仅配置 | 数据库（DNS 凭据已置空、通知/SMTP 密钥、用户、会话、日志已剔除），不含证书文件 | 分享配置、远程排障 |
+
+> ⚠️ 完整备份包含证书私钥、DNS API Token 与通知密钥，务必存放在受控位置，不要通过网盘、聊天工具等不可信渠道传输。
+
+### 恢复（页面上传，推荐）
+
+「设置 → 备份与恢复」点「上传备份恢复…」，选择导出的 tar.gz：
+
+1. **先校验**：必须是本应用导出的备份、数据库完整可读，校验失败不会有任何改动；
+2. **自动留底**：校验通过后先把当前数据完整备份到 `data/pre-restore-safety.tar.gz`，误恢复可拿它按下面手动步骤救回；
+3. **重启生效**：服务自动重启完成恢复——Docker 部署由 restart 策略自动拉起，本地开发需手动重启后端——结束后需重新登录。
+
+恢复「仅配置」备份后用户已被剔除，首次打开会重新进入初始化管理员流程，DNS Provider 需要重新填入凭据。包里有哪些目录就恢复哪些（完整备份含证书文件与 acme.sh 账户，仅配置只恢复数据库）。
+
+### 手动恢复（命令行）
+
+目标机器先按「快速开始」建好目录与 docker-compose.yml，然后：
+
+```bash
+docker compose down
+mkdir -p /tmp/acme-restore && tar xzf acme-manager-backup-XXXXXXXX-XXXXXX-full.tar.gz -C /tmp/acme-restore
+cp /tmp/acme-restore/data/acme.db ./data/acme.db
+rm -rf ./storage && cp -R /tmp/acme-restore/storage ./storage
+rm -rf ./acme.sh  && cp -R /tmp/acme-restore/acme.sh ./acme.sh
+rm -rf /tmp/acme-restore && docker compose up -d
+```
+
+恢复「仅配置」备份时跳过后两行即可。
 
 ## 本地开发
 
@@ -146,6 +190,7 @@ cp -R acme.sh-master/dnsapi acme.sh/dnsapi && rm -rf acme.sh-master
 | `DATA_DIR` | `<home>/data` | SQLite 数据库目录 |
 | `DB_FILE` | `<home>/data/acme.db` | 数据库文件 |
 | `STORAGE_DIR` | `<home>/storage` | 证书存储根目录 |
+| `HOST_STORAGE_DIR` | 自动识别 | storage 在宿主机上的位置，用于详情页展示「宿主机路径」；默认从容器 bind 挂载自动识别，识别不准时手动指定 |
 | `CERT_DIR` | `<home>/storage/certificates` | 证书文件输出目录 |
 | `ACME_HOME` | `<home>/acme.sh` | acme.sh 安装目录（独立于系统已有 acme.sh） |
 | `ACME_BIN` | `<home>/acme.sh/acme.sh` | acme.sh 可执行文件路径 |
@@ -181,8 +226,9 @@ acme-manager/
 - **续期**：不依赖 acme.sh 的 cron（安装时 `--nocron`）。每天 03:00 由本服务扫描数据库，对剩余天数 ≤ 阈值的证书执行 `--renew --force`，结果写回数据库并记录日志
 - **通知**：签发 / 续期结束（无论成败，手动或定时触发）后向所有已启用渠道推送。三个渠道可同时启用、互不影响，推送失败仅记日志告警，不影响主流程：
   - **机器人推送**：企业微信 / 飞书群机器人（含飞书签名校验）
-  - **Webhook**：向任意地址 POST JSON（`event` / `title` / `message` / `ok` / `domain` / `domains` / `ca` / `expiresAt` / `error` / `version` / `timestamp`），HTTP 2xx 视为成功，`event` 取值 `cert.issue.success|cert.issue.failed|cert.renew.success|cert.renew.failed|test`，适合对接 ntfy / Bark / 自建脚本
+  - **Webhook**：向任意地址 POST JSON（`event` / `title` / `message` / `ok` / `domain` / `domains` / `ca` / `expiresAt` / `error` / `version` / `timestamp`），HTTP 2xx 视为成功，`event` 取值 `cert.issue.success|cert.issue.failed|cert.renew.success|cert.renew.failed|system.daily-digest|test`，适合对接 ntfy / Bark / 自建脚本
   - **邮件**：内置零依赖 SMTP 客户端（465 SSL / 587·25 STARTTLS、AUTH LOGIN/PLAIN、UTF-8 主题与正文），支持多个收件人
+  - **每日巡检汇总**：每天定时扫描结束后发送一条 `system.daily-digest`（手动触发不推送）——存在已过期、状态异常、或 30 天内到期且自动续期已关闭的证书时逐条列出，全部正常时发一行心跳（兼作通知链路存活确认）
 - **隔离**：acme.sh 的 `--home` 指向本工具私有目录，账户注册、域名状态、证书缓存全部在内；删除 `data/ storage/ acme.sh/` 三个目录即彻底卸载
 
 ## 安全说明

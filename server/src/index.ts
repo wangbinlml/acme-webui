@@ -5,7 +5,7 @@ import fastifyStatic from '@fastify/static';
 import cron from 'node-cron';
 import { eq } from 'drizzle-orm';
 import { acmeAvailable, config, ensureDirs } from './config.js';
-import { db, runMigrations } from './db/index.js';
+import { db, runMigrations, appliedRestore } from './db/index.js';
 import { certificates } from './db/schema.js';
 import { logEvent } from './services/logger.js';
 import { enqueue } from './services/queue.js';
@@ -26,6 +26,12 @@ let staticRegistered = false;
 async function main(): Promise<void> {
   ensureDirs();
   runMigrations();
+  if (appliedRestore) {
+    logEvent(
+      'info',
+      `已从${appliedRestore.scope === 'full' ? '完整' : '仅配置'}备份恢复数据；恢复前的自动留底为 data/pre-restore-safety.tar.gz`,
+    );
+  }
 
   // 服务重启会把进行中的任务标记为失败，避免永远卡在“签发中”
   db.update(certificates)

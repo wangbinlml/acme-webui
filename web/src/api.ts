@@ -66,7 +66,9 @@ export const api = {
   deleteCert: (id: number) => request<{ ok: boolean }>(`/api/certificates/${id}`, { method: 'DELETE' }),
   saveDeploy: (
     id: number,
-    payload: { enabled: boolean; mode: string; targetDir: string; cmd: string; container: string },
+    payload: {
+      targets: Array<{ id?: string; name: string; enabled: boolean; mode: string; targetDir: string; cmd: string; container: string }>;
+    },
   ) =>
     request<{ certificate: CertificateView }>(`/api/certificates/${id}/deploy`, {
       method: 'PUT',
@@ -118,6 +120,13 @@ export const api = {
     request<{ ok: boolean; message: string; results: NotifyTestResult[] }>('/api/settings/notify/test', {
       method: 'POST',
       body: JSON.stringify(channel ? { channel } : {}),
+    }),
+  restoreBackup: (file: File) =>
+    request<{ ok: boolean; message: string }>('/api/settings/restore', {
+      method: 'POST',
+      // 原始字节流上传，必须显式声明，避免 request() 默认套 application/json
+      headers: { 'content-type': 'application/gzip' },
+      body: file,
     }),
   runRenewScan: () => request<{ started: boolean; message: string }>('/api/renew/run', { method: 'POST' }),
 

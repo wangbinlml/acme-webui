@@ -10,6 +10,7 @@ import {
   type Certificate,
   daysLeftOf,
   filesFor,
+  hasEnabledTargets,
   isEccKey,
   parseDomains,
   readCertInfo,
@@ -18,6 +19,7 @@ import { getAccountEmail } from './settings.js';
 import { getProviderDef } from './dns-providers.js';
 import { type NotifyEvent, notifyQuietly } from './notifier.js';
 import { deployCert } from './deploy.js';
+import { sendDailyDigest } from './digest.js';
 
 function now(): string {
   return new Date().toISOString();
@@ -191,7 +193,7 @@ async function issueFlowInner(certId: number, opts: { force: boolean }): Promise
   if (!(await installCert(cert))) return false;
   refreshCertState(cert);
   const deployed = getCert(certId) ?? cert;
-  if (deployed.deployEnabled) await deployCert(deployed);
+  if (hasEnabledTargets(deployed)) await deployCert(deployed);
   const updated = getCert(certId);
   const expires = updated?.expiresAt ? new Date(updated.expiresAt).toISOString().slice(0, 10) : '未知';
   logEvent('info', `${cert.primaryDomain} ${opts.force ? '重新签发' : '签发'}成功，有效期至 ${expires}`, certId);
@@ -282,7 +284,7 @@ async function renewFlowInner(certId: number): Promise<boolean> {
   if (!(await installCert(cert))) return false;
   refreshCertState(cert);
   const deployed = getCert(certId) ?? cert;
-  if (deployed.deployEnabled) await deployCert(deployed);
+  if (hasEnabledTargets(deployed)) await deployCert(deployed);
   const updated = getCert(certId);
   const expires = updated?.expiresAt ? new Date(updated.expiresAt).toISOString().slice(0, 10) : '未知';
   logEvent('info', `${cert.primaryDomain} 续期成功，新有效期至 ${expires}`, certId);
@@ -338,4 +340,7 @@ export async function runRenewalScan(trigger: 'cron' | 'manual'): Promise<void> 
     failed > 0 ? 'warn' : 'info',
     `检查完成：待续期 ${checked} 个，成功 ${renewed} 个${failed > 0 ? `，失败 ${failed} 个` : ''}`,
   );
+
+  // 每日巡检汇总只随定时扫描发送；手动触发时用户就在看 UI，不再推送
+  if (trigger === 'cron') await sendDailyDigest();
 }

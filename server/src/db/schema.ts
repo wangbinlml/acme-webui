@@ -21,7 +21,7 @@ export const certificates = sqliteTable('certificates', {
   issuedAt: text('issued_at'),
   expiresAt: text('expires_at'),
   lastError: text('last_error'),
-  /** 签发/续期成功后自动部署：复制证书到目标目录并按 deployMode 触发 reload */
+  /** 签发/续期成功后自动部署：复制证书到目标目录并按 mode 触发 reload */
   deployEnabled: integer('deploy_enabled', { mode: 'boolean' }).notNull().default(false),
   /** 容器内绝对路径（通过 compose 卷挂载映射到宿主或目标容器） */
   deployTargetDir: text('deploy_target_dir'),
@@ -29,6 +29,8 @@ export const certificates = sqliteTable('certificates', {
   deployMode: text('deploy_mode'),
   deployCmd: text('deploy_cmd'),
   deployContainer: text('deploy_container'),
+  /** JSON 数组（DeployTarget[]）：多部署目标；以下 5 个单目标列为旧版字段，读取时自动折算 */
+  deployTargets: text('deploy_targets'),
   lastDeployAt: text('last_deploy_at'),
   lastDeployError: text('last_deploy_error'),
   createdAt: text('created_at').notNull(),

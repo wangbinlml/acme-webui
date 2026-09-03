@@ -12,6 +12,18 @@ export interface UserView extends AuthUser {
   createdAt: string;
 }
 
+export interface DeployTargetView {
+  id: string;
+  name: string;
+  enabled: boolean;
+  mode: 'none' | 'command' | 'docker';
+  targetDir: string;
+  cmd: string;
+  container: string;
+  lastRunAt: string | null;
+  lastError: string | null;
+}
+
 export interface CertificateView {
   id: number;
   primaryDomain: string;
@@ -31,11 +43,7 @@ export interface CertificateView {
   issuedAt: string | null;
   expiresAt: string | null;
   lastError: string | null;
-  deployEnabled: boolean;
-  deployTargetDir: string | null;
-  deployMode: 'none' | 'command' | 'docker' | null;
-  deployCmd: string | null;
-  deployContainer: string | null;
+  deployTargets: DeployTargetView[];
   lastDeployAt: string | null;
   lastDeployError: string | null;
   createdAt: string;

@@ -1,8 +1,12 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { acmeAvailable, config } from '../config.js';
 import { getAccountEmail, getSetting, setSetting } from '../services/settings.js';
 import { logEvent } from '../services/logger.js';
 import { getNotifyConfig, sendNotification, type NotifyEvent } from '../services/notifier.js';
+import { createBackup } from '../services/backup.js';
+import { prepareRestore } from '../services/restore.js';
 
 /** 与 DNS 凭据一致的脱敏哨兵：保存时值等于它则保留原值 */
 const MASK = '••••••••';
@@ -111,6 +115,9 @@ async function saveNotify(body: Record<string, unknown>): Promise<string | null>
 }
 
 export async function settingsRoutes(app: FastifyInstance): Promise<void> {
+  // 上传的备份是原始 gzip 字节流，不走默认的 JSON 解析
+  app.addContentTypeParser('application/gzip', { parseAs: 'buffer' }, (_req, body, done) => done(null, body));
+
   app.get('/settings', async () => ({
     accountEmail: getAccountEmail() ?? '',
     renewCron: config.renewCron,
@@ -173,5 +180,62 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
           ? '测试消息已发送，请查收'
           : `测试失败：${failed.map((f) => `${f.channel}：${f.error ?? '未知错误'}`).join('；')}`,
     };
+  });
+
+  /** 导出备份 tar.gz（完整 / 仅配置），仅管理员；认证钩子放行了 viewer 的 GET，这里必须自校验 */
+  app.get('/settings/backup', async (req, reply) => {
+    if (req.user!.role !== 'admin') return reply.code(403).send({ error: '需要管理员权限' });
+    const mode = ((req.query as { mode?: string }) ?? {}).mode === 'config' ? 'config' : 'full';
+    try {
+      const result = await createBackup(mode);
+      reply
+        .header('content-type', 'application/gzip')
+        .header('content-disposition', `attachment; filename="${result.filename}"`)
+        .send(result.data);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      logEvent('warn', `导出备份（${mode}）失败：${msg}`);
+      return reply.code(500).send({ error: '备份生成失败，请查看系统日志' });
+    }
+  });
+
+  /**
+   * 上传备份并恢复：校验 → 当前数据自动留底 → 备份就位 → 退出进程，重启后生效。
+   * Docker 由 restart 策略自动拉起；本地开发需手动重启后端。
+   */
+  app.post('/settings/restore', { bodyLimit: 512 * 1024 * 1024 }, async (req, reply) => {
+    if (req.user!.role !== 'admin') return reply.code(403).send({ error: '需要管理员权限' });
+    const data = req.body;
+    if (!Buffer.isBuffer(data) || data.length === 0) {
+      return reply.code(400).send({ error: '请上传备份文件（tar.gz）' });
+    }
+    let scope: 'full' | 'config';
+    try {
+      scope = (await prepareRestore(data)).scope;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      logEvent('warn', `恢复备份校验失败：${msg}`);
+      return reply.code(400).send({ error: msg });
+    }
+
+    // 生效前把当前状态完整留底，误操作可手动救回；留底失败则中止，避免无退路
+    let safety = '';
+    try {
+      const backup = await createBackup('full');
+      fs.writeFileSync(path.join(config.dataDir, 'pre-restore-safety.tar.gz'), backup.data);
+      safety = `data/pre-restore-safety.tar.gz（${(backup.data.length / 1024 / 1024).toFixed(1)} MB）`;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      logEvent('warn', `恢复前的自动留底失败，已中止恢复：${msg}`);
+      return reply.code(500).send({ error: `恢复前自动留底失败，已中止恢复：${msg}` });
+    }
+
+    logEvent(
+      'warn',
+      `管理员 ${req.user!.username} 上传${scope === 'full' ? '完整' : '仅配置'}备份并触发恢复（留底 ${safety}），服务即将重启`,
+    );
+    // 留出响应送达时间再退出，容器 restart 策略会拉起新进程完成落位
+    setTimeout(() => process.exit(0), 500);
+    return { ok: true, message: `备份校验通过，服务正在重启完成恢复；恢复前的自动留底：${safety}。` };
   });
 }

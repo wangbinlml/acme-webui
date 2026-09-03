@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue';
-import { ElMessage } from 'element-plus';
+import { useRouter } from 'vue-router';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { api } from '../api';
 import type { NotifyTestResult, SettingsData } from '../types';
-import { canWrite } from '../auth';
+import { canWrite, currentUser } from '../auth';
 import { errMessage } from '../utils';
 
+const router = useRouter();
 const settings = ref<SettingsData | null>(null);
 const saving = ref(false);
 const savingNotify = ref(false);
@@ -131,6 +133,67 @@ async function runCheck(): Promise<void> {
     ElMessage.error(errMessage(e));
   } finally {
     running.value = false;
+  }
+}
+
+const backupMode = ref<'full' | 'config'>('full');
+
+/** 与证书下载一致：window.open 走 Cookie 鉴权，由浏览器直接落盘 */
+function downloadBackup(): void {
+  window.open(`/api/settings/backup?mode=${backupMode.value}`, '_blank');
+}
+
+const restoring = ref(false);
+const restoreNote = ref('');
+const fileInput = ref<HTMLInputElement | null>(null);
+
+function pickRestoreFile(): void {
+  fileInput.value?.click();
+}
+
+/** 轮询等待服务重启完成（Docker 自动拉起；本地开发可能需手动重启） */
+async function waitRestart(): Promise<void> {
+  for (let i = 0; i < 60; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    try {
+      await api.health();
+      return;
+    } catch {
+      // 服务尚未重启完成，继续等待
+    }
+  }
+  throw new Error('服务未在预期时间内重启完成（本地开发模式需手动重启后端 pnpm dev）');
+}
+
+async function onRestoreFile(e: Event): Promise<void> {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0] ?? null;
+  input.value = '';
+  if (!file) return;
+  try {
+    await ElMessageBox.confirm(
+      `将使用 ${file.name}（${(file.size / 1024 / 1024).toFixed(1)} MB）覆盖当前全部数据。\n` +
+        '恢复前会自动把当前数据留底到 data/pre-restore-safety.tar.gz；完成后服务自动重启，需要重新登录。',
+      '恢复备份',
+      { type: 'warning', confirmButtonText: '覆盖并恢复' },
+    );
+  } catch {
+    return; // 用户取消
+  }
+  restoring.value = true;
+  restoreNote.value = '正在上传并校验备份（校验失败不会有任何改动）…';
+  try {
+    const res = await api.restoreBackup(file);
+    restoreNote.value = `${res.message}正在等待服务重启…`;
+    await waitRestart();
+    currentUser.value = null;
+    ElMessage.success('恢复完成，请重新登录');
+    router.push('/login');
+  } catch (e) {
+    ElMessage.error(errMessage(e));
+  } finally {
+    restoring.value = false;
+    restoreNote.value = '';
   }
 }
 </script>
@@ -280,6 +343,39 @@ async function runCheck(): Promise<void> {
       </el-card>
     </el-col>
   </el-row>
+  <el-row style="margin-top: 16px">
+    <el-col :span="24">
+      <el-card shadow="never" v-loading="restoring" element-loading-text="恢复中…">
+        <template #header>备份与恢复</template>
+        <el-form label-width="110px" label-position="left">
+          <el-form-item label="备份范围">
+            <el-radio-group v-model="backupMode" :disabled="!canWrite()">
+              <el-radio value="full">完整备份</el-radio>
+              <el-radio value="config">仅配置</el-radio>
+            </el-radio-group>
+            <div class="form-tip">
+              <b>完整备份</b>：数据库 + 全部证书与私钥 + acme.sh 账户，用于迁移 / 灾备恢复。<span class="backup-danger">包含敏感信息，请妥善保管</span>。<br />
+              <b>仅配置</b>：证书记录、DNS Provider（凭据已置空）、部署目标等配置，不含用户 / 会话 / 日志 / 证书文件，适合分享排障。
+            </div>
+          </el-form-item>
+          <el-form-item>
+            <el-button v-if="canWrite()" type="primary" :loading="restoring" @click="downloadBackup">下载备份（tar.gz）</el-button>
+          </el-form-item>
+          <el-form-item label="恢复">
+            <el-button v-if="canWrite()" type="danger" plain :loading="restoring" @click="pickRestoreFile">
+              上传备份恢复…
+            </el-button>
+            <input ref="fileInput" type="file" accept=".tar.gz,.tgz,application/gzip" style="display: none" @change="onRestoreFile" />
+            <div class="form-tip">
+              上传本页导出的 tar.gz 覆盖当前全部数据。先校验备份有效性（失败不会有任何改动），生效前自动把当前数据留底到
+              data/pre-restore-safety.tar.gz；完成后服务自动重启（Docker 部署，本地开发需手动重启后端）并要求重新登录。
+            </div>
+            <div v-if="restoreNote" class="restore-note">{{ restoreNote }}</div>
+          </el-form-item>
+        </el-form>
+      </el-card>
+    </el-col>
+  </el-row>
 </template>
 
 <style scoped>
@@ -310,5 +406,14 @@ async function runCheck(): Promise<void> {
 }
 .test-result.fail {
   color: #f56c6c;
+}
+.backup-danger {
+  color: #e6a23c;
+}
+.restore-note {
+  margin-top: 6px;
+  font-size: 13px;
+  color: #409eff;
+  line-height: 1.6;
 }
 </style>
