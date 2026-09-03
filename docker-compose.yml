@@ -14,6 +14,8 @@ services:
       - TZ=Asia/Shanghai
       # 每天凌晨 3 点扫描续期（可改，如 "30 4 * * *"）
       # - RENEW_CRON=0 3 * * *
+      # 证书详情页的「宿主机路径」默认自动识别上方 ./storage 挂载；识别不准时可显式指定，如：
+      # - HOST_STORAGE_DIR=/srv/acme-manager/storage
     volumes:
       # SQLite 数据库（证书配置 / DNS 凭据 / 日志）
       - ./data:/app/data

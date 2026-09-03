@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { api } from '../api';
 import { currentUser, fetchMe } from '../auth';
+import { appVersion } from '../version';
 import { errMessage } from '../utils';
 
 const route = useRoute();
@@ -85,16 +86,29 @@ async function submit(): Promise<void> {
         </el-form>
       </template>
     </el-card>
+
+    <div v-if="appVersion" class="page-footer">Acme Manager v{{ appVersion }}</div>
   </div>
 </template>
 
 <style scoped>
 .login-page {
+  position: relative;
   height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
   background: #1d2530;
+}
+.page-footer {
+  position: absolute;
+  bottom: 18px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 12px;
+  user-select: none;
 }
 .login-card {
   width: 380px;

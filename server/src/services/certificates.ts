@@ -15,6 +15,9 @@ export interface CertificateView extends Omit<Certificate, 'domains'> {
   domains: string[];
   daysLeft: number | null;
   displayStatus: DisplayStatus;
+  /** 宿主机视角的文件路径（未运行在容器或未识别到挂载时与 certPath 相同） */
+  hostCertPath: string | null;
+  hostKeyPath: string | null;
 }
 
 export interface CertInfo {
@@ -137,11 +140,22 @@ export function displayStatusOf(cert: Certificate): DisplayStatus {
   return 'ok';
 }
 
+/** 容器内路径 → 宿主机路径；不在 storage 目录下或未识别到挂载时原样返回 */
+export function toHostPath(p: string | null): string | null {
+  if (!p || !config.hostStorageDir) return p;
+  if (p === config.storageDir || p.startsWith(`${config.storageDir}/`)) {
+    return path.join(config.hostStorageDir, p.slice(config.storageDir.length));
+  }
+  return p;
+}
+
 export function toView(cert: Certificate): CertificateView {
   return {
     ...cert,
     domains: parseDomains(cert),
     daysLeft: daysLeftOf(cert.expiresAt),
     displayStatus: displayStatusOf(cert),
+    hostCertPath: toHostPath(cert.certPath),
+    hostKeyPath: toHostPath(cert.keyPath),
   };
 }

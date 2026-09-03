@@ -1,13 +1,16 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { api } from './api';
 import { canWrite, currentUser } from './auth';
+import { appVersion, loadVersion } from './version';
 import { errMessage } from './utils';
 
 const route = useRoute();
 const router = useRouter();
+
+onMounted(loadVersion);
 
 const isLoginPage = computed(() => route.path === '/login');
 
@@ -95,6 +98,7 @@ async function logout(): Promise<void> {
           <span>{{ item.title }}</span>
         </el-menu-item>
       </el-menu>
+      <div v-if="appVersion" class="aside-footer">Acme Manager v{{ appVersion }}</div>
     </el-aside>
     <el-container>
       <el-header class="header">
@@ -146,6 +150,15 @@ async function logout(): Promise<void> {
 }
 .aside {
   background-color: #1d2530;
+  display: flex;
+  flex-direction: column;
+}
+.aside-footer {
+  margin-top: auto;
+  padding: 14px 20px;
+  color: #586a7d;
+  font-size: 12px;
+  user-select: none;
 }
 .brand {
   display: flex;

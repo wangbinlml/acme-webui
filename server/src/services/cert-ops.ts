@@ -16,7 +16,7 @@ import {
 } from './certificates.js';
 import { getAccountEmail } from './settings.js';
 import { getProviderDef } from './dns-providers.js';
-import { getNotifyConfig, notifyQuietly } from './notifier.js';
+import { type NotifyEvent, notifyQuietly } from './notifier.js';
 import { deployCert } from './deploy.js';
 
 function now(): string {
@@ -134,8 +134,15 @@ function refreshCertState(cert: Certificate): void {
     .run();
 }
 
-/** 签发流程（force=true 时为「重新签发」）。永不抛异常，返回是否成功。 */
+/** 签发流程（force=true 时为「重新签发」）。永不抛异常，返回是否成功。结束后推送通知。 */
 export async function issueFlow(certId: number, opts: { force: boolean }): Promise<boolean> {
+  const ok = await issueFlowInner(certId, opts);
+  const cert = getCert(certId);
+  if (cert) await notifyResult(cert, ok, opts.force ? 'reissue' : 'issue');
+  return ok;
+}
+
+async function issueFlowInner(certId: number, opts: { force: boolean }): Promise<boolean> {
   const cert = getCert(certId);
   if (!cert) return false;
   const domains = parseDomains(cert);
@@ -193,43 +200,52 @@ export async function issueFlow(certId: number, opts: { force: boolean }): Promi
 
 const CA_LABELS: Record<string, string> = { letsencrypt: "Let's Encrypt", zerossl: 'ZeroSSL' };
 
-/** 续期结束（无论成败）推送机器人通知；未配置通知渠道时不发送 */
-async function notifyRenewResult(cert: Certificate, ok: boolean): Promise<void> {
-  const cfg = getNotifyConfig();
-  if (!cfg.enabled) return;
+/** 签发/续期结束（无论成败）向所有已配置渠道推送通知 */
+async function notifyResult(cert: Certificate, ok: boolean, kind: 'issue' | 'reissue' | 'renew'): Promise<void> {
   const ca = CA_LABELS[cert.ca] ?? cert.ca;
-  const domains = parseDomains(cert).join('、');
-  if (ok) {
-    const expires = cert.expiresAt ? cert.expiresAt.slice(0, 10) : '未知';
-    const left = daysLeftOf(cert.expiresAt);
-    await notifyQuietly(
-      [
-        '✅ [Acme Manager] 证书续期成功',
-        `域名：${domains}`,
-        `CA：${ca}`,
-        `新到期时间：${expires}${left !== null ? `（剩余 ${left} 天）` : ''}`,
-      ].join('\n'),
-      cert.id,
-    );
-  } else {
-    await notifyQuietly(
-      [
-        '❌ [Acme Manager] 证书续期失败',
-        `域名：${domains}`,
-        `CA：${ca}`,
-        `错误：${(cert.lastError ?? '未知错误').split('\n')[0].slice(0, 300)}`,
-        '请到管理面板查看详情并手动处理',
-      ].join('\n'),
-      cert.id,
-    );
-  }
+  const domains = parseDomains(cert);
+  const what = kind === 'renew' ? '续期' : kind === 'reissue' ? '重新签发' : '签发';
+  const event = `cert.${kind === 'renew' ? 'renew' : 'issue'}.${ok ? 'success' : 'failed'}` as NotifyEvent['event'];
+  const ev: NotifyEvent = ok
+    ? {
+        event,
+        title: `✅ [Acme Manager] 证书${what}成功`,
+        message: [
+          `域名：${domains.join('、')}`,
+          `CA：${ca}`,
+          `到期时间：${cert.expiresAt ? cert.expiresAt.slice(0, 10) : '未知'}${
+            daysLeftOf(cert.expiresAt) !== null ? `（剩余 ${daysLeftOf(cert.expiresAt)} 天）` : ''
+          }`,
+        ].join('\n'),
+        ok: true,
+        domain: cert.primaryDomain,
+        domains,
+        ca: cert.ca,
+        expiresAt: cert.expiresAt ?? undefined,
+      }
+    : {
+        event,
+        title: `❌ [Acme Manager] 证书${what}失败`,
+        message: [
+          `域名：${domains.join('、')}`,
+          `CA：${ca}`,
+          `错误：${(cert.lastError ?? '未知错误').split('\n')[0].slice(0, 300)}`,
+          '请到管理面板查看详情并手动处理',
+        ].join('\n'),
+        ok: false,
+        domain: cert.primaryDomain,
+        domains,
+        ca: cert.ca,
+        error: (cert.lastError ?? '未知错误').split('\n')[0].slice(0, 300),
+      };
+  await notifyQuietly(ev, cert.id);
 }
 
 /** 立即续期（--force，由本系统的阈值逻辑决定何时续） */
 export async function renewFlow(certId: number): Promise<boolean> {
   const ok = await renewFlowInner(certId);
   const cert = getCert(certId);
-  if (cert) await notifyRenewResult(cert, ok);
+  if (cert) await notifyResult(cert, ok, 'renew');
   return ok;
 }
 

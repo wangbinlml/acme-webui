@@ -177,23 +177,26 @@ acme-manager/
 ## 工作原理
 
 - **签发**：后端以子进程运行 acme.sh `--issue`，通过环境变量注入 DNS 凭据（不落命令行），日志逐行推送到 SSE。所有 acme.sh 操作经串行队列执行，避免并发冲突
-- **证书落盘**：签发成功后用 `--install-cert` 把证书复制到 `storage/certificates/<主域名>/` 固定路径（fullchain.pem / privkey.pem / cert.pem / chain.pem），Web UI 与宿主机都从这里取证书
+- **证书落盘**：签发成功后用 `--install-cert` 把证书复制到 `storage/certificates/<主域名>/` 固定路径（fullchain.pem / privkey.pem / cert.pem / chain.pem），Web UI 与宿主机都从这里取证书；详情页展示的路径即宿主机路径（自动从容器 bind 挂载识别，识别不准时可用环境变量 `HOST_STORAGE_DIR` 指定），容器内路径以小字附注
 - **续期**：不依赖 acme.sh 的 cron（安装时 `--nocron`）。每天 03:00 由本服务扫描数据库，对剩余天数 ≤ 阈值的证书执行 `--renew --force`，结果写回数据库并记录日志
-- **通知**：续期结束（手动或定时触发）后，若已配置企业微信 / 飞书机器人则推送成功 / 失败结果；推送失败仅记日志告警，不影响续期流程
+- **通知**：签发 / 续期结束（无论成败，手动或定时触发）后向所有已启用渠道推送。三个渠道可同时启用、互不影响，推送失败仅记日志告警，不影响主流程：
+  - **机器人推送**：企业微信 / 飞书群机器人（含飞书签名校验）
+  - **Webhook**：向任意地址 POST JSON（`event` / `title` / `message` / `ok` / `domain` / `domains` / `ca` / `expiresAt` / `error` / `version` / `timestamp`），HTTP 2xx 视为成功，`event` 取值 `cert.issue.success|cert.issue.failed|cert.renew.success|cert.renew.failed|test`，适合对接 ntfy / Bark / 自建脚本
+  - **邮件**：内置零依赖 SMTP 客户端（465 SSL / 587·25 STARTTLS、AUTH LOGIN/PLAIN、UTF-8 主题与正文），支持多个收件人
 - **隔离**：acme.sh 的 `--home` 指向本工具私有目录，账户注册、域名状态、证书缓存全部在内；删除 `data/ storage/ acme.sh/` 三个目录即彻底卸载
 
 ## 安全说明
 
 - **登录认证**：所有 API 均需登录会话（HttpOnly Cookie，7 天有效期）；同一用户名连续登录失败 5 次锁定 10 分钟；修改 / 重置密码后其他会话立即下线。会话 Cookie 未加 `Secure` 标记，公网使用请置于 HTTPS 反向代理之后，避免密码明文传输
 - **角色**：viewer 只读角色在服务端强制拦截全部写操作，前端按钮隐藏仅为体验优化
-- **DNS 凭据与通知密钥保存在 SQLite 中（明文）**：包括 DNS Provider 凭据、通知 Webhook 地址（含企微 key / 飞书 token）、飞书签名密钥。请确保 `./data` 目录权限受控；DNS 凭据泄露等同于域名解析控制权泄露
+- **DNS 凭据与通知密钥保存在 SQLite 中（明文）**：包括 DNS Provider 凭据、通知 Webhook 地址（含企微 key / 飞书 token）、飞书签名密钥、SMTP 密码 / 授权码。请确保 `./data` 目录权限受控；DNS 凭据泄露等同于域名解析控制权泄露
 - **私钥文件**：`storage/certificates/<主域名>/privkey.pem` 为明文私钥，备份/迁移时注意权限
 
 ## V2 Roadmap
 
 - [x] 证书自动部署：Nginx / Caddy / Docker 容器（reload 钩子）
-- [ ] Webhook 通知（签发 / 续期成功 / 失败）
-- [ ] 邮件通知（企业微信 / 飞书机器人推送已在 v1 提供）
+- [x] Webhook 通知（签发 / 续期成功 / 失败）
+- [x] 邮件通知（企业微信 / 飞书机器人推送已在 v1 提供）
 - [x] 多用户与登录认证（admin / viewer 角色、登录限速、用户管理）
 
 ## 技术栈

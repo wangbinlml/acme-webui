@@ -25,6 +25,9 @@ export interface CertificateView {
   renewBeforeDays: number;
   certPath: string | null;
   keyPath: string | null;
+  /** 宿主机视角的路径；与 certPath 相同表示非容器部署或未识别到挂载 */
+  hostCertPath: string | null;
+  hostKeyPath: string | null;
   issuedAt: string | null;
   expiresAt: string | null;
   lastError: string | null;
@@ -112,10 +115,15 @@ export interface PersistedLog {
 }
 
 export interface NotifySettings {
-  channel: '' | 'wecom' | 'feishu';
-  /** 已保存的地址会脱敏显示（key 只留末 4 位）；提交时传回脱敏哨兵表示不变更 */
-  webhook: string;
-  feishuSecret: string;
+  robot: { channel: '' | 'wecom' | 'feishu'; webhook: string; feishuSecret: string };
+  webhook: { url: string };
+  smtp: { host: string; port: number; user: string; from: string; to: string; password: string };
+}
+
+export interface NotifyTestResult {
+  channel: 'robot' | 'webhook' | 'smtp';
+  ok: boolean;
+  error?: string;
 }
 
 export interface SettingsData {

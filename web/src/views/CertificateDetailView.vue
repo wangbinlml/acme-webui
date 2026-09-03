@@ -217,10 +217,20 @@ async function runDeployNow(): Promise<void> {
               <span class="muted">（剩余 {{ daysLeftText(cert.daysLeft) }}）</span>
             </el-descriptions-item>
             <el-descriptions-item label="证书路径">
-              <span class="mono">{{ cert.certPath ?? '-' }}</span>
+              <div class="path-block">
+                <span class="mono">{{ cert.hostCertPath ?? cert.certPath ?? '-' }}</span>
+                <div v-if="cert.hostCertPath && cert.hostCertPath !== cert.certPath" class="mono path-sub">
+                  容器内：{{ cert.certPath }}
+                </div>
+              </div>
             </el-descriptions-item>
             <el-descriptions-item label="私钥路径">
-              <span class="mono">{{ cert.keyPath ?? '-' }}</span>
+              <div class="path-block">
+                <span class="mono">{{ cert.hostKeyPath ?? cert.keyPath ?? '-' }}</span>
+                <div v-if="cert.hostKeyPath && cert.hostKeyPath !== cert.keyPath" class="mono path-sub">
+                  容器内：{{ cert.keyPath }}
+                </div>
+              </div>
             </el-descriptions-item>
             <el-descriptions-item label="创建时间">{{ formatDate(cert.createdAt) }}</el-descriptions-item>
           </el-descriptions>
@@ -370,6 +380,15 @@ async function runDeployNow(): Promise<void> {
   font-family: ui-monospace, Menlo, Consolas, monospace;
   font-size: 12px;
   word-break: break-all;
+}
+.path-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.path-sub {
+  color: #909399;
+  font-size: 11px;
 }
 .mono-input :deep(input) {
   font-family: ui-monospace, Menlo, Consolas, monospace;

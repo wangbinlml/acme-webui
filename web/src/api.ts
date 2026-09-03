@@ -4,6 +4,7 @@ import type {
   CertInfo,
   DashboardData,
   DnsProviderView,
+  NotifyTestResult,
   PersistedLog,
   ProviderTypeDef,
   SettingsData,
@@ -105,12 +106,22 @@ export const api = {
   },
 
   getSettings: () => request<SettingsData>('/api/settings'),
-  saveSettings: (payload: { accountEmail: string; notify?: { channel: string; webhook: string; feishuSecret: string } }) =>
-    request<{ ok: boolean }>('/api/settings', { method: 'PUT', body: JSON.stringify(payload) }),
-  testNotify: () =>
-    request<{ ok: boolean; message: string }>('/api/settings/notify/test', { method: 'POST' }),
+  saveSettings: (payload: {
+    accountEmail: string;
+    notify?: {
+      robot?: { channel: string; webhook: string; feishuSecret: string };
+      webhook?: { url: string };
+      smtp?: { host: string; port: number; user: string; password: string; from: string; to: string };
+    };
+  }) => request<{ ok: boolean }>('/api/settings', { method: 'PUT', body: JSON.stringify(payload) }),
+  testNotify: (channel?: 'robot' | 'webhook' | 'smtp') =>
+    request<{ ok: boolean; message: string; results: NotifyTestResult[] }>('/api/settings/notify/test', {
+      method: 'POST',
+      body: JSON.stringify(channel ? { channel } : {}),
+    }),
   runRenewScan: () => request<{ started: boolean; message: string }>('/api/renew/run', { method: 'POST' }),
 
+  health: () => request<{ ok: boolean; version: string; acmeAvailable: boolean }>('/api/health'),
   authStatus: () => request<{ needsSetup: boolean }>('/api/auth/status'),
   setup: (payload: { username: string; password: string }) =>
     request<{ user: AuthUser }>('/api/auth/setup', { method: 'POST', body: JSON.stringify(payload) }),
