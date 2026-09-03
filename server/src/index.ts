@@ -7,7 +7,7 @@ import { eq } from 'drizzle-orm';
 import { acmeAvailable, config, ensureDirs } from './config.js';
 import { db, runMigrations, appliedRestore } from './db/index.js';
 import { certificates } from './db/schema.js';
-import { logEvent } from './services/logger.js';
+import { logEvent, runLogRetention } from './services/logger.js';
 import { enqueue } from './services/queue.js';
 import { runRenewalScan } from './services/cert-ops.js';
 import { getSessionUser, readSessionCookie } from './services/auth.js';
@@ -101,6 +101,8 @@ async function main(): Promise<void> {
   });
 
   cron.schedule(config.renewCron, () => {
+    // 顺带做日志/会话清理（秒级完成，不进任务队列）
+    runLogRetention();
     void enqueue(() => runRenewalScan('cron'));
   });
 

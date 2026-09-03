@@ -3,6 +3,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { certificates, logs } from '../db/schema.js';
+import { getLogRetentionDays, runLogRetention } from '../services/logger.js';
 
 export async function logRoutes(app: FastifyInstance): Promise<void> {
   app.get('/logs', async (req) => {
@@ -29,6 +30,22 @@ export async function logRoutes(app: FastifyInstance): Promise<void> {
         ...r,
         domain: r.certificateId ? (domainById.get(r.certificateId) ?? null) : null,
       })),
+    };
+  });
+
+  /** 手动清理：按当前保留天数立即删旧日志 + 过期会话 + 轮转 acme.sh 日志（仅管理员） */
+  app.post('/logs/cleanup', async (req, reply) => {
+    if (req.user!.role !== 'admin') return reply.code(403).send({ error: '需要管理员权限' });
+    if (getLogRetentionDays() <= 0) {
+      return reply.code(400).send({ error: '当前为永久保留模式，请先把保留天数设为大于 0' });
+    }
+    const result = runLogRetention();
+    return {
+      ok: true,
+      ...result,
+      message: `已删除 ${result.logsDeleted} 条日志、${result.sessionsPurged} 条过期会话${
+        result.acmeLogRotated ? '，acme.sh 运行日志已轮转' : ''
+      }`,
     };
   });
 }

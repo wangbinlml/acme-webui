@@ -140,5 +140,6 @@ export interface SettingsData {
   acmeBin: string;
   acmeAvailable: boolean;
   version: string;
+  logRetentionDays: number;
   notify: NotifySettings;
 }

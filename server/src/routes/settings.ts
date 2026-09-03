@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { acmeAvailable, config } from '../config.js';
 import { getAccountEmail, getSetting, setSetting } from '../services/settings.js';
-import { logEvent } from '../services/logger.js';
+import { getLogRetentionDays, logEvent, runLogRetention } from '../services/logger.js';
 import { getNotifyConfig, sendNotification, type NotifyEvent } from '../services/notifier.js';
 import { createBackup } from '../services/backup.js';
 import { prepareRestore } from '../services/restore.js';
@@ -124,17 +124,30 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
     acmeBin: config.acmeBin,
     acmeAvailable: acmeAvailable(),
     version: config.version,
+    logRetentionDays: getLogRetentionDays(),
     notify: notifyView(),
   }));
 
   app.put('/settings', async (req, reply) => {
     const body = (req.body ?? {}) as Record<string, unknown>;
-    const email = String(body.accountEmail ?? '').trim();
-    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return reply.code(400).send({ error: '邮箱格式不正确' });
+    // 各字段按需更新：未出现在 body 里的保持原值（日志页只传保留天数，不能动到邮箱）
+    if (body.accountEmail !== undefined) {
+      const email = String(body.accountEmail ?? '').trim();
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return reply.code(400).send({ error: '邮箱格式不正确' });
+      }
+      setSetting('accountEmail', email);
+      logEvent(email ? 'info' : 'warn', email ? `账户邮箱已设置为 ${email}` : '账户邮箱已清空');
     }
-    setSetting('accountEmail', email);
-    logEvent(email ? 'info' : 'warn', email ? `账户邮箱已设置为 ${email}` : '账户邮箱已清空');
+
+    if (body.logRetentionDays !== undefined) {
+      const days = Number(body.logRetentionDays);
+      if (!Number.isInteger(days) || days < 0 || days > 3650) {
+        return reply.code(400).send({ error: '日志保留天数需为 0-3650 的整数（0 表示永久保留）' });
+      }
+      setSetting('logRetentionDays', String(days));
+      logEvent('info', `日志保留天数已设置为 ${days === 0 ? '永久保留' : `${days} 天`}`);
+    }
 
     if (body.notify !== undefined) {
       const err = await saveNotify(body.notify as Record<string, unknown>);

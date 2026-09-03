@@ -106,10 +106,16 @@ export const api = {
     const suffix = qs.size > 0 ? `?${qs.toString()}` : '';
     return request<{ logs: PersistedLog[] }>(`/api/logs${suffix}`);
   },
+  cleanupLogs: () =>
+    request<{ ok: boolean; message: string; logsDeleted: number; sessionsPurged: number; acmeLogRotated: boolean }>(
+      '/api/logs/cleanup',
+      { method: 'POST' },
+    ),
 
   getSettings: () => request<SettingsData>('/api/settings'),
   saveSettings: (payload: {
-    accountEmail: string;
+    accountEmail?: string;
+    logRetentionDays?: number;
     notify?: {
       robot?: { channel: string; webhook: string; feishuSecret: string };
       webhook?: { url: string };
