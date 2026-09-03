@@ -41,7 +41,9 @@ async function main(): Promise<void> {
     .where(eq(certificates.status, 'issuing'))
     .run();
 
-  const app = Fastify({ logger: false });
+  // trustProxy：本服务通常跑在 nginx 等反向代理后面（如 https://域名 → 127.0.0.1:28080），
+  // 信任 X-Forwarded-* 头后 req.protocol / req.ip 才是真实值；分发安装命令里的地址依赖 protocol
+  const app = Fastify({ logger: false, trustProxy: true });
 
   app.get('/api/health', () => ({
     ok: true,

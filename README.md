@@ -79,7 +79,7 @@ curl -fsSL -H 'Authorization: Bearer <token>' \
   'http://管理机:28080/api/distribute/install.sh?domain=example.com' | sudo bash -s -- --docker webserver
 ```
 
-安装脚本会：把证书下载到 `/etc/nginx/certs/<域名>/`（加 `-s -- --dir 目录` 可改）、安装每天 04:35 的同步任务（**内容有变化才 reload**）、并立即执行一次同步。同一台机器装多张证书时，对每张证书分别执行一次命令即可（同步脚本与定时任务全局只有一份）。
+安装脚本会：把证书下载到 `/etc/nginx/certs/<域名>/`（加 `-s -- --dir 目录` 可改，`目录` 需含域名子目录）、安装每天 04:35 的同步任务（**内容有变化才 reload**）、并立即执行一次同步。同一台机器装多张证书时，对每张证书分别执行一次命令即可（同步脚本与定时任务全局只有一份）。
 
 Web 服务器配置直接指向该目录：`ssl_certificate /etc/nginx/certs/example.com/fullchain.pem;`
 

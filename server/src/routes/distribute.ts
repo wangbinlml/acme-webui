@@ -51,6 +51,16 @@ for conf in /etc/acme-distribute/*.conf; do
     rm -rf "\$tmp"; continue
   fi
 
+  # 内容防线：返回 200 但不是 PEM（如反代重定向页/默认页）时拒绝安装，保住机器上的现有证书
+  if ! head -c 64 "\$tmp/fullchain.pem" | grep -q 'BEGIN CERTIFICATE'; then
+    log "\${DOMAIN}：下载到的 fullchain 不是证书内容（MANAGER 地址 \$MANAGER 可能被重定向或返回了网页），跳过"
+    rm -rf "\$tmp"; continue
+  fi
+  if ! head -c 64 "\$tmp/privkey.pem" | grep -q 'PRIVATE KEY'; then
+    log "\${DOMAIN}：下载到的 privkey 不是私钥内容，跳过"
+    rm -rf "\$tmp"; continue
+  fi
+
   if [ -f "\$CERT_DIR/fullchain.pem" ] && [ -f "\$CERT_DIR/privkey.pem" ] \\
      && cmp -s "\$tmp/fullchain.pem" "\$CERT_DIR/fullchain.pem" \\
      && cmp -s "\$tmp/privkey.pem" "\$CERT_DIR/privkey.pem"; then

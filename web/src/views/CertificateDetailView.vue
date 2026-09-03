@@ -298,7 +298,7 @@ async function copyText(text: string): Promise<void> {
             <el-button link type="primary" size="small" @click="copyText(distributeDockerCmd)">复制</el-button>
           </div>
           <ul class="help-list dist-label-gap">
-            <li>证书默认装到 <code>/etc/nginx/certs/{{ cert.primaryDomain }}/</code>，命令后加 <code>-s -- --dir 目录</code> 可改</li>
+            <li>证书默认装到 <code>/etc/nginx/certs/{{ cert.primaryDomain }}/</code>，加 <code>-s -- --dir 目录</code> 可改（<code>目录</code> 需含域名，如 <code>/etc/nginx/cret/{{ cert.primaryDomain }}</code>）</li>
             <li>Docker 场景记得让容器挂载证书目录（如 <code>./nginx-certs:/etc/nginx/certs</code>）</li>
             <li>同一台机器装多张证书：对每张证书分别执行一次命令（定时任务只装一份，不会重复）</li>
             <li>卸载：<code>rm -rf /etc/acme-distribute /usr/local/bin/acme-distribute-pull /etc/cron.d/acme-distribute</code></li>
