@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { api } from '../api';
@@ -24,6 +24,7 @@ async function refresh(): Promise<void> {
     cert.value = res.certificate;
     certInfo.value = res.certInfo;
     renewBeforeDays.value = res.certificate.renewBeforeDays;
+    syncDeployFormOnce(res.certificate);
   } catch {
     // 轮询失败时保持上次数据
   }
@@ -113,6 +114,52 @@ async function saveThreshold(): Promise<void> {
 
 function download(type: string): void {
   window.open(`/api/certificates/${certId}/download?type=${type}`, '_blank');
+}
+
+// ── 自动部署 ────────────────────────────────────────────
+const deployForm = reactive({ enabled: false, mode: 'none' as string, targetDir: '', cmd: '', container: '' });
+let deployFormInit = false;
+
+function syncDeployFormOnce(c: CertificateView): void {
+  if (deployFormInit) return; // 避免轮询刷新覆盖正在编辑的内容
+  deployFormInit = true;
+  deployForm.enabled = c.deployEnabled;
+  deployForm.mode = c.deployMode ?? 'none';
+  deployForm.targetDir = c.deployTargetDir ?? '';
+  deployForm.cmd = c.deployCmd ?? '';
+  deployForm.container = c.deployContainer ?? '';
+}
+
+async function saveDeploy(): Promise<void> {
+  try {
+    await api.saveDeploy(certId, { ...deployForm });
+    ElMessage.success('部署配置已保存');
+    await refresh();
+  } catch (e) {
+    ElMessage.error(errMessage(e));
+  }
+}
+
+const deploying = ref(false);
+const deployResult = ref('');
+async function runDeployNow(): Promise<void> {
+  if (deployForm.enabled && deployForm.targetDir.trim() === '') {
+    ElMessage.warning('请先填写目标目录并保存');
+    return;
+  }
+  deploying.value = true;
+  deployResult.value = '';
+  try {
+    const res = await api.runDeploy(certId);
+    if (res.ok) ElMessage.success('部署成功');
+    else ElMessage.error('部署失败，见下方结果');
+    deployResult.value = res.message;
+    await refresh();
+  } catch (e) {
+    ElMessage.error(errMessage(e));
+  } finally {
+    deploying.value = false;
+  }
 }
 </script>
 
@@ -214,6 +261,65 @@ function download(type: string): void {
         </el-card>
 
         <el-card shadow="never" class="detail-card">
+          <template #header>自动部署（签发/续期成功后）</template>
+          <el-form label-width="80px" label-position="left">
+            <el-form-item label="启用部署">
+              <el-switch v-model="deployForm.enabled" :disabled="!canWrite()" />
+              <span class="muted small">复制证书到目标目录，并按需触发 reload</span>
+            </el-form-item>
+            <template v-if="deployForm.enabled">
+              <el-form-item label="目标目录">
+                <el-input v-model="deployForm.targetDir" class="mono-input" placeholder="/deploy/nginx-certs" :disabled="!canWrite()" />
+                <div class="muted small form-hint">容器内绝对路径，需在 docker-compose.yml 挂载对应宿主目录</div>
+              </el-form-item>
+              <el-form-item label="reload">
+                <el-radio-group v-model="deployForm.mode" :disabled="!canWrite()">
+                  <el-radio value="none">仅复制</el-radio>
+                  <el-radio value="command">容器内命令</el-radio>
+                  <el-radio value="docker">Docker 容器</el-radio>
+                </el-radio-group>
+              </el-form-item>
+              <el-form-item v-if="deployForm.mode === 'command'" label="命令">
+                <el-input v-model="deployForm.cmd" class="mono-input" placeholder="curl -fsS http://宿主:9090/reload" :disabled="!canWrite()" />
+                <div class="muted small form-hint">在本工具容器内执行，可 curl 宿主侧钩子或 ssh 触发宿主 nginx reload</div>
+              </el-form-item>
+              <template v-if="deployForm.mode === 'docker'">
+                <el-form-item label="容器名">
+                  <el-input v-model="deployForm.container" placeholder="如 webserver" :disabled="!canWrite()" />
+                </el-form-item>
+                <el-form-item label="容器命令">
+                  <el-input v-model="deployForm.cmd" class="mono-input" placeholder="nginx -s reload" :disabled="!canWrite()" />
+                  <div class="muted small form-hint">需挂载 /var/run/docker.sock；Caddy 容器可填 caddy reload --config /etc/caddy/Caddyfile</div>
+                </el-form-item>
+              </template>
+            </template>
+            <el-form-item v-if="canWrite()">
+              <el-button type="primary" size="small" @click="saveDeploy">保存配置</el-button>
+              <el-button size="small" :loading="deploying" :disabled="!cert.deployEnabled" @click="runDeployNow">立即部署</el-button>
+            </el-form-item>
+          </el-form>
+
+          <div v-if="cert.lastDeployAt" class="muted small deploy-status">
+            上次部署：{{ formatDate(cert.lastDeployAt) }}<template v-if="!cert.lastDeployError">（成功）</template>
+          </div>
+          <el-alert v-if="cert.lastDeployError" type="error" :title="'最近一次部署失败'" :closable="false" class="detail-alert">
+            <pre class="error-pre">{{ cert.lastDeployError }}</pre>
+          </el-alert>
+          <el-alert v-if="deployResult" :type="cert.lastDeployError ? 'error' : 'success'" :title="'本次部署结果'" :closable="false" class="detail-alert">
+            <pre class="error-pre">{{ deployResult }}</pre>
+          </el-alert>
+          <el-collapse class="deploy-help">
+            <el-collapse-item title="各场景怎么配？（宿主机 nginx / 容器 nginx / Caddy）" name="help">
+              <ul class="help-list">
+                <li><b>宿主机 nginx（非 Docker）</b>：compose 里加卷 <code>- ./deploy:/deploy</code>，目标目录填 <code>/deploy/nginx-certs</code>；nginx 配置引用宿主机 <code>./deploy/nginx-certs/&lt;域名&gt;/fullchain.pem</code>。reload 选「仅复制」，宿主侧用 systemd path / cron 触发 <code>nginx -s reload</code>（详见 README），或选「容器内命令」用 curl 调宿主钩子。</li>
+                <li><b>nginx / Caddy 跑在容器里</b>：compose 挂载 <code>/var/run/docker.sock</code>，reload 选「Docker 容器」填容器名，命令默认 <code>nginx -s reload</code>；证书目录让两个容器共享同一个挂载。</li>
+                <li>证书会复制到 <code>&lt;目标目录&gt;/&lt;主域名&gt;/</code>（通配符为 <code>&lt;域名&gt;-wildcard</code>），含 fullchain / privkey / cert / chain 四个文件。</li>
+              </ul>
+            </el-collapse-item>
+          </el-collapse>
+        </el-card>
+
+        <el-card shadow="never" class="detail-card">
           <template #header>实时日志（本证书）</template>
           <LiveLog :certificate-id="certId" height="420px" />
         </el-card>
@@ -264,6 +370,35 @@ function download(type: string): void {
   font-family: ui-monospace, Menlo, Consolas, monospace;
   font-size: 12px;
   word-break: break-all;
+}
+.mono-input :deep(input) {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+.form-hint {
+  width: 100%;
+  line-height: 1.5;
+}
+.deploy-status {
+  margin-bottom: 4px;
+}
+.deploy-help :deep(.el-collapse-item__header) {
+  font-size: 12px;
+  color: #909399;
+  height: 32px;
+  line-height: 32px;
+}
+.help-list {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 12px;
+  color: #606266;
+  line-height: 1.8;
+}
+.help-list code {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  background: #f4f4f5;
+  padding: 1px 4px;
+  border-radius: 3px;
 }
 .fingerprint {
   color: #909399;

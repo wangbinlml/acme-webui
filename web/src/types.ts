@@ -28,6 +28,13 @@ export interface CertificateView {
   issuedAt: string | null;
   expiresAt: string | null;
   lastError: string | null;
+  deployEnabled: boolean;
+  deployTargetDir: string | null;
+  deployMode: 'none' | 'command' | 'docker' | null;
+  deployCmd: string | null;
+  deployContainer: string | null;
+  lastDeployAt: string | null;
+  lastDeployError: string | null;
   createdAt: string;
   updatedAt: string;
   daysLeft: number | null;

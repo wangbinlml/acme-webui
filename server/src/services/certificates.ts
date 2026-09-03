@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { X509Certificate } from 'node:crypto';
 import type { InferSelectModel } from 'drizzle-orm';
+import { and, eq, lt } from 'drizzle-orm';
+import { db } from '../db/index.js';
 import { certificates } from '../db/schema.js';
 import { config } from '../config.js';
 
@@ -43,12 +45,33 @@ export function isEccKey(keyType: string): boolean {
   return keyType.startsWith('ec');
 }
 
-export function certDirFor(certId: number): string {
-  return path.join(config.certDir, String(certId));
+/** 主域名 → 目录名：通配符 *.example.com 记为 example.com-wildcard，其余仅保留文件系统安全字符 */
+export function dirNameFor(primaryDomain: string): string {
+  const lower = primaryDomain.trim().toLowerCase();
+  const base = lower.startsWith('*.') ? `${lower.slice(2)}-wildcard` : lower;
+  return base.replace(/[^a-z0-9.-]/g, '-');
 }
 
-export function filesFor(certId: number): { dir: string; fullchain: string; key: string; cert: string; chain: string } {
-  const dir = certDirFor(certId);
+/**
+ * 证书文件的存放目录：storage/certificates/<主域名>/。
+ * 同一主域名新建了多个证书时，后来的追加 -<id> 后缀避免覆盖；
+ * 旧版本按数字 id 存放的目录，会在下次签发/续期安装成功后被清理。
+ */
+export function filesFor(cert: Pick<Certificate, 'id' | 'primaryDomain'>): {
+  dir: string;
+  fullchain: string;
+  key: string;
+  cert: string;
+  chain: string;
+} {
+  let name = dirNameFor(cert.primaryDomain);
+  const clash = db
+    .select({ id: certificates.id })
+    .from(certificates)
+    .where(and(eq(certificates.primaryDomain, cert.primaryDomain), lt(certificates.id, cert.id)))
+    .all();
+  if (clash.length > 0) name = `${name}-${cert.id}`;
+  const dir = path.join(config.certDir, name);
   return {
     dir,
     fullchain: path.join(dir, 'fullchain.pem'),
@@ -88,7 +111,7 @@ export function parseCertPem(pem: string): CertInfo {
 
 /** 读取本地证书文件并解析（文件不存在返回 null） */
 export function readCertInfo(cert: Certificate): CertInfo | null {
-  const file = cert.certPath ?? filesFor(cert.id).fullchain;
+  const file = cert.certPath ?? filesFor(cert).fullchain;
   if (!cert.certPath || !fs.existsSync(file)) return null;
   try {
     return parseCertPem(fs.readFileSync(file, 'utf8'));

@@ -15,6 +15,13 @@
       "when": 1788350505018,
       "tag": "0001_condemned_mariko_yashida",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788402568564,
+      "tag": "0002_unknown_sersi",
+      "breakpoints": true
     }
   ]
 }

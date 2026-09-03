@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import { eq } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { certificates, dnsProviders } from '../db/schema.js';
@@ -16,6 +17,7 @@ import {
 import { getAccountEmail } from './settings.js';
 import { getProviderDef } from './dns-providers.js';
 import { getNotifyConfig, notifyQuietly } from './notifier.js';
+import { deployCert } from './deploy.js';
 
 function now(): string {
   return new Date().toISOString();
@@ -75,9 +77,9 @@ async function dnsEnvFor(cert: Certificate): Promise<DnsEnvResult | null> {
   return { env, dnsAlias: def.dnsAlias };
 }
 
-/** 把 acme.sh 内部的证书安装到受管理的稳定目录 storage/certificates/<id>/ */
+/** 把 acme.sh 内部的证书安装到受管理的稳定目录 storage/certificates/<主域名>/ */
 async function installCert(cert: Certificate): Promise<boolean> {
-  const files = filesFor(cert.id);
+  const files = filesFor(cert);
   fs.mkdirSync(files.dir, { recursive: true });
   const args = ['--install-cert', '-d', cert.primaryDomain];
   if (isEccKey(cert.keyType)) args.push('--ecc');
@@ -94,6 +96,15 @@ async function installCert(cert: Certificate): Promise<boolean> {
       markError(cert.id, `安装证书失败（acme.sh 退出码 ${res.code}）\n${tailOfOutput(res.output)}`);
       return false;
     }
+    // 迁移旧版按数字 id 存放的目录（域名目录不可能是纯数字，可安全区分）
+    const legacyDir = path.join(config.certDir, String(cert.id));
+    if (legacyDir !== files.dir && fs.existsSync(legacyDir)) {
+      try {
+        fs.rmSync(legacyDir, { recursive: true, force: true });
+      } catch {
+        // 清理失败不影响主流程
+      }
+    }
     return true;
   } catch (err) {
     markError(cert.id, err instanceof Error ? err.message : String(err));
@@ -103,7 +114,7 @@ async function installCert(cert: Certificate): Promise<boolean> {
 
 /** 重新解析本地证书文件并更新数据库状态（签发/续期成功后调用） */
 function refreshCertState(cert: Certificate): void {
-  const files = filesFor(cert.id);
+  const files = filesFor(cert);
   const info = readCertInfo({ ...cert, certPath: files.fullchain });
   if (!info) {
     markError(cert.id, '签发流程结束但无法解析证书文件，请查看 acme.sh 日志');
@@ -172,6 +183,8 @@ export async function issueFlow(certId: number, opts: { force: boolean }): Promi
 
   if (!(await installCert(cert))) return false;
   refreshCertState(cert);
+  const deployed = getCert(certId) ?? cert;
+  if (deployed.deployEnabled) await deployCert(deployed);
   const updated = getCert(certId);
   const expires = updated?.expiresAt ? new Date(updated.expiresAt).toISOString().slice(0, 10) : '未知';
   logEvent('info', `${cert.primaryDomain} ${opts.force ? '重新签发' : '签发'}成功，有效期至 ${expires}`, certId);
@@ -252,6 +265,8 @@ async function renewFlowInner(certId: number): Promise<boolean> {
 
   if (!(await installCert(cert))) return false;
   refreshCertState(cert);
+  const deployed = getCert(certId) ?? cert;
+  if (deployed.deployEnabled) await deployCert(deployed);
   const updated = getCert(certId);
   const expires = updated?.expiresAt ? new Date(updated.expiresAt).toISOString().slice(0, 10) : '未知';
   logEvent('info', `${cert.primaryDomain} 续期成功，新有效期至 ${expires}`, certId);
@@ -270,7 +285,9 @@ export async function removeFlow(cert: Certificate): Promise<void> {
     logEvent('warn', `从 acme.sh 移除 ${cert.primaryDomain} 失败：${err instanceof Error ? err.message : String(err)}`, cert.id);
   }
   try {
-    fs.rmSync(filesFor(cert.id).dir, { recursive: true, force: true });
+    fs.rmSync(filesFor(cert).dir, { recursive: true, force: true });
+    // 同时清理旧版按数字 id 存放的目录（若有）
+    fs.rmSync(path.join(config.certDir, String(cert.id)), { recursive: true, force: true });
   } catch {
     // 目录不存在时忽略
   }

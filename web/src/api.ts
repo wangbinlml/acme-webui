@@ -63,6 +63,18 @@ export const api = {
       body: JSON.stringify(patch),
     }),
   deleteCert: (id: number) => request<{ ok: boolean }>(`/api/certificates/${id}`, { method: 'DELETE' }),
+  saveDeploy: (
+    id: number,
+    payload: { enabled: boolean; mode: string; targetDir: string; cmd: string; container: string },
+  ) =>
+    request<{ certificate: CertificateView }>(`/api/certificates/${id}/deploy`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+  runDeploy: (id: number) =>
+    request<{ ok: boolean; message: string; certificate: CertificateView }>(`/api/certificates/${id}/deploy/run`, {
+      method: 'POST',
+    }),
 
   providerTypes: () => request<{ types: ProviderTypeDef[] }>('/api/dns-provider-types'),
   listProviders: () => request<{ providers: DnsProviderView[] }>('/api/dns-providers'),

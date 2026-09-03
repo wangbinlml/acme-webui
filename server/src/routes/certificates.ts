@@ -5,6 +5,7 @@ import { db } from '../db/index.js';
 import { certificates, dnsProviders } from '../db/schema.js';
 import { enqueue } from '../services/queue.js';
 import { issueFlow, renewFlow, removeFlow } from '../services/cert-ops.js';
+import { deployCert } from '../services/deploy.js';
 import { filesFor, isValidDomain, readCertInfo, toView } from '../services/certificates.js';
 import { logEvent } from '../services/logger.js';
 import { getAccountEmail } from '../services/settings.js';
@@ -157,14 +158,67 @@ export async function certificateRoutes(app: FastifyInstance): Promise<void> {
     return { ok: true };
   });
 
+  /** 保存自动部署配置（enabled=false 时其余字段仅原样保存，不再校验） */
+  app.put<{ Params: { id: string } }>('/certificates/:id/deploy', async (req, reply) => {
+    const id = parseId(req.params.id);
+    const cert = id ? getCertOrNull(id) : null;
+    if (!cert) return reply.code(404).send({ error: '证书不存在' });
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const enabled = body.enabled === true;
+    const mode = String(body.mode ?? 'none');
+    if (!['none', 'command', 'docker'].includes(mode)) {
+      return reply.code(400).send({ error: '不支持的 reload 方式' });
+    }
+    const targetDir = String(body.targetDir ?? '').trim();
+    const cmd = String(body.cmd ?? '').trim();
+    const container = String(body.container ?? '').trim();
+    if (enabled) {
+      if (!targetDir) return reply.code(400).send({ error: '启用部署后必须填写目标目录' });
+      if (!targetDir.startsWith('/') || targetDir.includes('..')) {
+        return reply.code(400).send({ error: '目标目录必须是容器内绝对路径，且不能包含 ..' });
+      }
+      if (mode === 'command' && !cmd) return reply.code(400).send({ error: '请填写 reload 命令' });
+      if (mode === 'docker' && !container) return reply.code(400).send({ error: '请填写要 reload 的 Docker 容器名' });
+    }
+    db.update(certificates)
+      .set({
+        deployEnabled: enabled,
+        deployTargetDir: targetDir,
+        deployMode: mode,
+        deployCmd: cmd,
+        deployContainer: container,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(certificates.id, cert.id))
+      .run();
+    return { certificate: toView(getCertOrNull(cert.id) ?? cert) };
+  });
+
+  /** 立即执行一次部署（复制 + reload），用于初始配置或验证 */
+  app.post<{ Params: { id: string } }>('/certificates/:id/deploy/run', async (req, reply) => {
+    const id = parseId(req.params.id);
+    const cert = id ? getCertOrNull(id) : null;
+    if (!cert) return reply.code(404).send({ error: '证书不存在' });
+    if (!cert.deployEnabled) return reply.code(400).send({ error: '请先启用自动部署并保存配置' });
+    const result = await deployCert(cert);
+    return { ok: result.ok, message: result.message, certificate: toView(getCertOrNull(cert.id) ?? cert) };
+  });
+
   app.get<{ Params: { id: string } }>('/certificates/:id/download', async (req, reply) => {
     const id = parseId(req.params.id);
     const cert = id ? getCertOrNull(id) : null;
     if (!cert) return reply.code(404).send({ error: '证书不存在' });
     const type = String((req.query as { type?: string }).type ?? 'fullchain');
-    const files = filesFor(cert.id);
+    const files = filesFor(cert);
+    // fullchain/key 优先用数据库记录的路径，兼容旧版数字目录中未迁移的证书
     const file =
-      type === 'key' ? files.key : type === 'cert' ? files.cert : type === 'ca' ? files.chain : files.fullchain;
+      type === 'key'
+        ? cert.keyPath ?? files.key
+        : type === 'cert'
+          ? files.cert
+          : type === 'ca'
+            ? files.chain
+            : cert.certPath ?? files.fullchain;
     if (!fs.existsSync(file)) {
       return reply.code(404).send({ error: '证书文件不存在（证书可能尚未签发成功）' });
     }
