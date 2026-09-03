@@ -71,6 +71,9 @@ export interface ProviderTypeDef {
   dnsAlias: string;
   fields: ProviderFieldDef[];
   testable: boolean;
+  /** 凭据获取指引（控制台直达链接 + 说明） */
+  helpUrl?: string;
+  helpText?: string;
 }
 
 export interface DnsProviderView {

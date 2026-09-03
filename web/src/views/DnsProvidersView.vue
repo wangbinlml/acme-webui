@@ -187,6 +187,16 @@ function credentialEntries(row: DnsProviderView): string[] {
           </el-select>
           <div v-if="editingId" class="form-tip">不支持修改类型，如需更改请删除后重新添加</div>
         </el-form-item>
+        <el-form-item v-if="activeType?.helpUrl" label=" ">
+          <el-alert type="info" :closable="false" class="help-alert">
+            <div class="help-line">
+              <span>{{ activeType.helpText }}</span>
+              <el-link type="primary" :href="activeType.helpUrl" target="_blank" class="help-link">
+                打开控制台获取 <el-icon><TopRight /></el-icon>
+              </el-link>
+            </div>
+          </el-alert>
+        </el-form-item>
         <el-form-item
           v-for="field in activeType?.fields ?? []"
           :key="field.key"
@@ -224,5 +234,21 @@ function credentialEntries(row: DnsProviderView): string[] {
 .form-tip {
   font-size: 12px;
   color: #909399;
+}
+.help-alert {
+  width: 100%;
+  margin-top: 4px;
+}
+.help-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.help-link {
+  flex-shrink: 0;
+  font-size: 12px;
 }
 </style>
