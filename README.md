@@ -71,9 +71,10 @@ cd web && pnpm install && pnpm dev
 
 # 本地想真正签发时，先装一份独立的 acme.sh（不会动 ~/.acme.sh）。
 # 注：get.acme.sh 的管道安装目前转发 --home 参数有 bug（报 Unknown parameter: ----home），
-# 与 docker-entrypoint.sh 一致，直接从 GitHub 下载单文件即可：
+# 与 docker-entrypoint.sh 一致，直接从 GitHub 下载；主脚本之外必须带上 dnsapi/ 插件目录（DNS-01 必需）：
 curl -fsSL https://github.com/acmesh-official/acme.sh/archive/master.tar.gz | tar xz
-mkdir -p acme.sh && cp acme.sh-master/acme.sh acme.sh/acme.sh && chmod +x acme.sh/acme.sh && rm -rf acme.sh-master
+mkdir -p acme.sh && cp acme.sh-master/acme.sh acme.sh/ && chmod +x acme.sh/acme.sh
+cp -R acme.sh-master/dnsapi acme.sh/dnsapi && rm -rf acme.sh-master
 ```
 
 测试数据目录可用环境变量重定向：`ACME_MANAGER_HOME=/tmp/acme-test node server/dist/index.js`。

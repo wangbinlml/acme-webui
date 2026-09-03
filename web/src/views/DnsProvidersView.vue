@@ -122,7 +122,11 @@ async function remove(row: DnsProviderView): Promise<void> {
 }
 
 function credentialEntries(row: DnsProviderView): string[] {
-  return Object.entries(row.credentials).map(([k, v]) => `${k}: ${v || '（未设置）'}`);
+  const fields = types.value.find((t) => t.id === row.type)?.fields ?? [];
+  return Object.entries(row.credentials).map(([k, v]) => {
+    const label = fields.find((f) => f.key === k)?.label ?? k;
+    return `${label}: ${v || '（未设置）'}`;
+  });
 }
 </script>
 
