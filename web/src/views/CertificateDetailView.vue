@@ -281,28 +281,49 @@ async function copyText(text: string): Promise<void> {
     <el-dialog v-model="distributeVisible" title="分发到其他服务器" width="720px">
       <div v-loading="distributeLoading">
         <template v-if="distributeToken">
-          <el-alert
-            type="info"
-            :closable="false"
-            style="margin-bottom: 12px"
-            title="到目标服务器上以 root 执行命令即可：自动下载证书、每天 04:35 检查更新、内容有变化才 reload"
-          />
-          <div class="dist-label">nginx / Caddy 直接安装在机器上：</div>
-          <div class="dist-cmd">
-            <code>{{ distributeCmd }}</code>
-            <el-button link type="primary" size="small" @click="copyText(distributeCmd)">复制</el-button>
+          <div class="dist-step">
+            <span class="dist-step-num">1</span>
+            <div class="dist-step-body">
+              <div class="dist-step-title">按场景复制命令</div>
+              <div class="dist-scenario">
+                <div class="dist-scenario-head">
+                  <span>nginx / Caddy 直接安装在服务器上</span>
+                  <el-button link type="primary" size="small" @click="copyText(distributeCmd)">
+                    <el-icon><DocumentCopy /></el-icon><span>复制</span>
+                  </el-button>
+                </div>
+                <div class="dist-cmd"><code>{{ distributeCmd }}</code></div>
+              </div>
+              <div class="dist-scenario">
+                <div class="dist-scenario-head">
+                  <span>nginx / Caddy 跑在 Docker 容器里（需替换 &lt;nginx容器名&gt;）</span>
+                  <el-button link type="primary" size="small" @click="copyText(distributeDockerCmd)">
+                    <el-icon><DocumentCopy /></el-icon><span>复制</span>
+                  </el-button>
+                </div>
+                <div class="dist-cmd"><code>{{ distributeDockerCmd }}</code></div>
+              </div>
+            </div>
           </div>
-          <div class="dist-label dist-label-gap">nginx / Caddy 跑在 Docker 容器里（把容器名替换掉）：</div>
-          <div class="dist-cmd">
-            <code>{{ distributeDockerCmd }}</code>
-            <el-button link type="primary" size="small" @click="copyText(distributeDockerCmd)">复制</el-button>
+
+          <div class="dist-step">
+            <span class="dist-step-num">2</span>
+            <div class="dist-step-body">
+              <div class="dist-step-title">到目标服务器上以 root 执行</div>
+              <div class="dist-note">执行后立即同步一次；以后每天 04:35 自动检查，证书有变化才会 reload</div>
+            </div>
           </div>
-          <ul class="help-list dist-label-gap">
-            <li>证书默认装到 <code>/etc/nginx/certs/{{ cert.primaryDomain }}/</code>，加 <code>-s -- --dir 目录</code> 可改（<code>目录</code> 需含域名，如 <code>/etc/nginx/cret/{{ cert.primaryDomain }}</code>）</li>
-            <li>Docker 场景记得让容器挂载证书目录（如 <code>./nginx-certs:/etc/nginx/certs</code>）</li>
-            <li>同一台机器装多张证书：对每张证书分别执行一次命令（定时任务只装一份，不会重复）</li>
-            <li>卸载：<code>rm -rf /etc/acme-distribute /usr/local/bin/acme-distribute-pull /etc/cron.d/acme-distribute</code></li>
-          </ul>
+
+          <el-collapse class="dist-help">
+            <el-collapse-item title="证书装到哪里？同一台机器多张证书？怎么卸载？" name="detail">
+              <ul class="help-list">
+                <li>证书默认装到 <code>/etc/nginx/certs/{{ cert.primaryDomain }}/</code>，加 <code>-s -- --dir 目录</code> 可改（<code>目录</code> 需含域名，如 <code>/etc/nginx/cret/{{ cert.primaryDomain }}</code>）</li>
+                <li>Docker 场景记得让容器挂载证书目录（如 <code>./nginx-certs:/etc/nginx/certs</code>）</li>
+                <li>同一台机器装多张证书：对每张证书分别执行一次命令（定时任务只装一份，不会重复）</li>
+                <li>卸载：<code>rm -rf /etc/acme-distribute /usr/local/bin/acme-distribute-pull /etc/cron.d/acme-distribute</code></li>
+              </ul>
+            </el-collapse-item>
+          </el-collapse>
         </template>
         <el-empty v-else-if="!distributeLoading" description="尚未创建分发 Token（在「设置 → 多主机分发」创建）" :image-size="60">
           <el-button type="primary" @click="createDistributeToken">立即创建</el-button>
@@ -380,28 +401,81 @@ async function copyText(text: string): Promise<void> {
 .fingerprint {
   color: #909399;
 }
-.dist-label {
-  font-size: 12px;
-  color: #909399;
-  margin-bottom: 4px;
+.dist-step {
+  display: flex;
+  gap: 10px;
 }
-.dist-label-gap {
-  margin-top: 10px;
+.dist-step + .dist-step {
+  margin-top: 18px;
+}
+.dist-step-num {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--el-color-primary);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1px;
+}
+.dist-step-title {
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+.dist-note {
+  font-size: 13px;
+  color: #606266;
+  line-height: 1.6;
+}
+.dist-scenario {
+  border: 1px solid #e4e7ed;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.dist-scenario + .dist-scenario {
+  margin-top: 14px;
+}
+.dist-scenario-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 12px;
+  background: #f5f7fa;
+  font-size: 13px;
+  color: #303133;
 }
 .dist-cmd {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  background: #f5f7fa;
-  border-radius: 4px;
-  padding: 8px 10px;
+  padding: 8px 12px;
 }
 .dist-cmd code {
-  flex: 1;
   font-family: ui-monospace, Menlo, Consolas, monospace;
   font-size: 12px;
   line-height: 1.6;
-  word-break: break-all;
   white-space: pre-wrap;
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+.dist-help {
+  margin-top: 18px;
+  border-top: 1px solid #ebeef5;
+}
+.dist-help :deep(.el-collapse-item__header) {
+  font-size: 12px;
+  color: #909399;
+  height: 36px;
+  line-height: 36px;
+  border-bottom: none;
+}
+.dist-help :deep(.el-collapse-item__wrap) {
+  border-bottom: none;
+}
+.dist-help :deep(.el-collapse-item__content) {
+  padding-bottom: 4px;
 }
 </style>
