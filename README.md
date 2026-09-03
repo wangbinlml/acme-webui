@@ -57,77 +57,13 @@ docker compose down
 3. **设置** 页填写账户邮箱（ZeroSSL 必需，Let's Encrypt 建议填写）；按需在「通知推送」配置企业微信 / 飞书群机器人并点「保存并发送测试」
 4. **证书管理 → 创建证书**：填主域名 / SAN，选 CA、算法、验证方式（DNS-01 需选 Provider），创建后自动开始签发，详情页可看 acme.sh 实时输出
 5. 签发成功后即可在详情页下载 `fullchain.pem` / `privkey.pem`，或直接从宿主机 `./storage/certificates/<主域名>/`（如 `szzh.vip/`、`szzh.vip-wildcard/`） 取用
-6. 需要证书落库后自动同步给 nginx/Caddy？在证书详情页「自动部署」里配置（见下节）
-
-## 证书自动部署（Nginx / Caddy / Docker 容器）
-
-签发或续期成功后，自动把证书复制到各目标的 `<目标目录>/<主域名>/`（含 fullchain / privkey / cert / chain，私钥权限 600），并按该目标选择的 **reload 方式**触发服务重载（平滑 reload，不断连接）。
-
-每张证书可配置**多个部署目标**（最多 10 个，如同时发宿主机 nginx 目录和容器共享目录）：每个目标独立的目录、reload 方式与执行状态，签发/续期成功后依次执行，任一目标失败不影响其他目标；详情页逐目标显示上次部署时间与异常信息。
-
-| reload 方式 | 适用场景 | 说明 |
-|---|---|---|
-| 仅复制 | 宿主机 nginx / 任意服务 | 只复制文件，由宿主机侧自行触发重载（见下方 systemd/cron 方案） |
-| 容器内命令 | 有钩子可调的场景 | 在本工具容器里执行任意 shell 命令，如 `curl` 调宿主机钩子、`ssh` 到目标机 |
-| Docker 容器 | nginx/Caddy 跑在容器里 | 通过挂载的 docker.sock 直接 `docker exec` 到指定容器执行 reload，无需安装 docker CLI |
-
-### 场景一：宿主机 nginx（非 Docker 部署）
-
-容器里的工具无法直接操作宿主机 shell，标准做法是**文件经挂载目录直达宿主机 + reload 在宿主机侧触发**：
-
-1. `docker-compose.yml` 取消注释 `- ./deploy:/deploy`；
-2. 证书详情页「自动部署」：目标目录填 `/deploy/nginx-certs`，reload 方式选「仅复制」；
-3. 宿主机 nginx 直接引用该目录（`./deploy/nginx-certs/<域名>/fullchain.pem`）：
-
-   ```nginx
-   ssl_certificate     /opt/acme-manager/deploy/nginx-certs/szzh.vip/fullchain.pem;
-   ssl_certificate_key /opt/acme-manager/deploy/nginx-certs/szzh.vip/privkey.pem;
-   ```
-
-4. reload 触发二选一（文件更新后自动执行 `nginx -s reload`）：
-   - **systemd path 监控（推荐，即时）**：
-
-     ```ini
-     # /etc/systemd/system/acme-deploy-reload.path
-     [Unit]
-     Description=Watch acme-manager deployed certs
-     [Path]
-     PathModified=/opt/acme-manager/deploy/nginx-certs
-     Unit=acme-deploy-reload.service
-     [Install]
-     WantedBy=multi-user.target
-     ```
-     ```ini
-     # /etc/systemd/system/acme-deploy-reload.service
-     [Unit]
-     Description=Reload nginx after cert deploy
-     [Service]
-     Type=oneshot
-     ExecStart=/usr/sbin/nginx -s reload
-     ```
-     `systemctl enable --now acme-deploy-reload.path`
-   - **cron 定时 reload（最简，最多延迟一个周期）**：`30 4 * * * /usr/sbin/nginx -s reload`（reload 幂等无害）
-
-   若宿主机上跑着一个极简 HTTP 钩子服务，也可以选「容器内命令」填 `curl -fsS http://宿主机IP:9090/reload` 即时触发。
-
-### 场景二：nginx / Caddy 跑在 Docker 容器里
-
-1. `docker-compose.yml` 取消注释 `- /var/run/docker.sock:/var/run/docker.sock`（并让 nginx 容器挂载同一个证书目录）；
-2. 证书详情页「自动部署」：目标目录填容器内共享路径（如 `/deploy/nginx-certs`），reload 方式选「Docker 容器」，填容器名（如 `webserver`）与命令（默认 `nginx -s reload`；Caddy 填 `caddy reload --config /etc/caddy/Caddyfile`）。
-
-配置后可点「立即部署」验证（返回 reload 命令的完整输出），每次部署结果记录在证书详情与系统日志中；部署失败不影响证书状态本身。
-
-每次部署完成后会自动做**线上验证**：连接 `<主域名>:443` 取线上证书，与本地刚部署的证书比对 SHA-256 指纹——
-
-- reload 由本工具触发（「容器内命令」/「Docker 容器」模式）时，线上仍是旧证书会标记为部署异常并在日志告警（常见原因：reload 实际没生效、vhost 引用的路径不对、域名走了 CDN）；
-- 「仅复制」模式下只作为参考提示（reload 时机由外部决定）；
-- 域名不出网、443 不可达或通配符主域无站点时自动跳过，不影响部署结果。通配符证书基于去掉 `*.` 的主域验证。
+6. 需要把证书自动同步到这台或别的服务器上的 nginx/Caddy？见下节「多主机分发」，一条命令装好
 
 > HTTP-01（standalone）验证要求宿主机 80 端口空闲且公网可达，compose 默认**不映射** 80 端口（避免与服务器上已有的 Web 服务冲突，被占用时报 `bind: address already in use`）；只用 DNS-01 时无需任何改动。确需 HTTP-01 时，在 docker-compose.yml 里取消 `- "80:80"` 的注释。
 
 ## 多主机分发（一条命令装好）
 
-证书跑在多台服务器上时，不用逐台配部署目标：
+证书跑在多台服务器上时，在每台目标机器上执行一条命令即可：
 
 1. 「设置 → 多主机分发」创建一个**分发 Token**（只读，仅能下载证书文件，可随时吊销 / 重新生成）；
 2. 证书详情页点「分发到其他服务器」，复制生成的命令；
@@ -274,7 +210,6 @@ acme-manager/
 
 ## V2 Roadmap
 
-- [x] 证书自动部署：Nginx / Caddy / Docker 容器（reload 钩子）
 - [x] Webhook 通知（签发 / 续期成功 / 失败）
 - [x] 邮件通知（企业微信 / 飞书机器人推送已在 v1 提供）
 - [x] 多用户与登录认证（admin / viewer 角色、登录限速、用户管理）

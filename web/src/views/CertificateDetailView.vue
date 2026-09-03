@@ -24,7 +24,6 @@ async function refresh(): Promise<void> {
     cert.value = res.certificate;
     certInfo.value = res.certInfo;
     renewBeforeDays.value = res.certificate.renewBeforeDays;
-    syncDeployFormOnce(res.certificate);
   } catch {
     // 轮询失败时保持上次数据
   }
@@ -162,96 +161,6 @@ async function copyText(text: string): Promise<void> {
     ElMessage.error('复制失败，请手动选择复制');
   }
 }
-
-// ── 自动部署（多目标） ────────────────────────────────────
-interface TargetForm {
-  id: string;
-  name: string;
-  enabled: boolean;
-  mode: string;
-  targetDir: string;
-  cmd: string;
-  container: string;
-}
-const targetForms = ref<TargetForm[]>([]);
-let deployFormInit = false;
-
-function syncFormsFrom(c: CertificateView): void {
-  targetForms.value = c.deployTargets.map((t) => ({
-    id: t.id,
-    name: t.name,
-    enabled: t.enabled,
-    mode: t.mode,
-    targetDir: t.targetDir,
-    cmd: t.cmd,
-    container: t.container,
-  }));
-}
-
-function syncDeployFormOnce(c: CertificateView): void {
-  if (deployFormInit) return; // 避免轮询刷新覆盖正在编辑的内容
-  deployFormInit = true;
-  syncFormsFrom(c);
-}
-
-const hasEnabledTarget = computed(() => targetForms.value.some((t) => t.enabled));
-
-function addTarget(): void {
-  targetForms.value.push({
-    id: '', // 保存后由服务端分配
-    name: `目标 ${targetForms.value.length + 1}`,
-    enabled: true,
-    mode: 'none',
-    targetDir: '',
-    cmd: '',
-    container: '',
-  });
-}
-
-function removeTarget(index: number): void {
-  targetForms.value.splice(index, 1);
-}
-
-/** 从轮询数据里取某目标最近的执行状态（编辑表单里不含状态字段） */
-function statusOf(id: string): { lastRunAt: string | null; lastError: string | null } | null {
-  const t = cert.value?.deployTargets.find((x) => x.id === id);
-  return t ? { lastRunAt: t.lastRunAt, lastError: t.lastError } : null;
-}
-
-async function saveDeploy(): Promise<void> {
-  try {
-    const res = await api.saveDeploy(certId, { targets: targetForms.value });
-    ElMessage.success('部署配置已保存');
-    syncFormsFrom(res.certificate); // 回填服务端分配的目标 id，状态才能对上
-    await refresh();
-  } catch (e) {
-    ElMessage.error(errMessage(e));
-  }
-}
-
-const deploying = ref(false);
-const deployResult = ref('');
-const deployOk = ref(true);
-async function runDeployNow(): Promise<void> {
-  if (!hasEnabledTarget.value) {
-    ElMessage.warning('请先添加并启用至少一个部署目标');
-    return;
-  }
-  deploying.value = true;
-  deployResult.value = '';
-  try {
-    const res = await api.runDeploy(certId);
-    deployOk.value = res.ok;
-    if (res.ok) ElMessage.success('部署成功');
-    else ElMessage.error('部署存在异常，见下方结果');
-    deployResult.value = res.message;
-    await refresh();
-  } catch (e) {
-    ElMessage.error(errMessage(e));
-  } finally {
-    deploying.value = false;
-  }
-}
 </script>
 
 <template>
@@ -363,75 +272,6 @@ async function runDeployNow(): Promise<void> {
         </el-card>
 
         <el-card shadow="never" class="detail-card">
-          <template #header>自动部署（签发/续期成功后）</template>
-
-          <el-empty v-if="targetForms.length === 0" description="尚未配置部署目标" :image-size="60">
-            <el-button v-if="canWrite()" type="primary" size="small" @click="addTarget">添加目标</el-button>
-          </el-empty>
-
-          <div v-for="(t, i) in targetForms" :key="i" class="target-block">
-            <div class="target-head">
-              <el-input v-model="t.name" class="target-name" placeholder="目标名称" :disabled="!canWrite()" />
-              <el-switch v-model="t.enabled" :disabled="!canWrite()" />
-              <el-button v-if="canWrite()" link type="danger" size="small" @click="removeTarget(i)">删除</el-button>
-            </div>
-            <el-form label-width="80px" label-position="left">
-              <el-form-item label="目标目录">
-                <el-input v-model="t.targetDir" class="mono-input" placeholder="/deploy/nginx-certs" :disabled="!canWrite()" />
-                <div class="muted small form-hint">容器内绝对路径，需在 docker-compose.yml 挂载对应宿主目录</div>
-              </el-form-item>
-              <el-form-item label="reload">
-                <el-radio-group v-model="t.mode" :disabled="!canWrite()">
-                  <el-radio value="none">仅复制</el-radio>
-                  <el-radio value="command">容器内命令</el-radio>
-                  <el-radio value="docker">Docker 容器</el-radio>
-                </el-radio-group>
-              </el-form-item>
-              <el-form-item v-if="t.mode === 'command'" label="命令">
-                <el-input v-model="t.cmd" class="mono-input" placeholder="curl -fsS http://宿主:9090/reload" :disabled="!canWrite()" />
-                <div class="muted small form-hint">在本工具容器内执行，可 curl 宿主侧钩子或 ssh 触发宿主 nginx reload</div>
-              </el-form-item>
-              <template v-if="t.mode === 'docker'">
-                <el-form-item label="容器名">
-                  <el-input v-model="t.container" placeholder="如 webserver" :disabled="!canWrite()" />
-                </el-form-item>
-                <el-form-item label="容器命令">
-                  <el-input v-model="t.cmd" class="mono-input" placeholder="nginx -s reload" :disabled="!canWrite()" />
-                  <div class="muted small form-hint">需挂载 /var/run/docker.sock；Caddy 容器可填 caddy reload --config /etc/caddy/Caddyfile</div>
-                </el-form-item>
-              </template>
-            </el-form>
-            <div v-if="statusOf(t.id)?.lastRunAt" class="muted small deploy-status">
-              上次部署：{{ formatDate(statusOf(t.id)?.lastRunAt ?? null) }}<template v-if="!statusOf(t.id)?.lastError">（成功）</template>
-            </div>
-            <el-alert v-if="statusOf(t.id)?.lastError" type="error" :title="`目标「${t.name}」部署异常`" :closable="false" class="detail-alert">
-              <pre class="error-pre">{{ statusOf(t.id)?.lastError }}</pre>
-            </el-alert>
-          </div>
-
-          <div v-if="canWrite() && targetForms.length > 0" class="deploy-actions">
-            <el-button size="small" @click="addTarget">+ 添加目标</el-button>
-            <el-button type="primary" size="small" @click="saveDeploy">保存配置</el-button>
-            <el-button size="small" :loading="deploying" :disabled="!hasEnabledTarget" @click="runDeployNow">立即部署</el-button>
-          </div>
-
-          <el-alert v-if="deployResult" :type="deployOk ? 'success' : 'error'" :title="'本次部署结果'" :closable="false" class="detail-alert">
-            <pre class="error-pre">{{ deployResult }}</pre>
-          </el-alert>
-          <el-collapse class="deploy-help">
-            <el-collapse-item title="各场景怎么配？（宿主机 nginx / 容器 nginx / Caddy）" name="help">
-              <ul class="help-list">
-                <li>可添加多个部署目标（如同时发宿主机目录和容器共享目录），每个目标独立目录、reload 方式与执行状态，签发/续期成功后依次执行，任一失败不影响其他目标。</li>
-                <li><b>宿主机 nginx（非 Docker）</b>：compose 里加卷 <code>- ./deploy:/deploy</code>，目标目录填 <code>/deploy/nginx-certs</code>；nginx 配置引用宿主机 <code>./deploy/nginx-certs/&lt;域名&gt;/fullchain.pem</code>。reload 选「仅复制」，宿主侧用 systemd path / cron 触发 <code>nginx -s reload</code>（详见 README），或选「容器内命令」用 curl 调宿主钩子。</li>
-                <li><b>nginx / Caddy 跑在容器里</b>：compose 挂载 <code>/var/run/docker.sock</code>，reload 选「Docker 容器」填容器名，命令默认 <code>nginx -s reload</code>；证书目录让两个容器共享同一个挂载。</li>
-                <li>证书会复制到 <code>&lt;目标目录&gt;/&lt;主域名&gt;/</code>（通配符为 <code>&lt;域名&gt;-wildcard</code>），含 fullchain / privkey / cert / chain 四个文件。</li>
-                <li>每次部署完成后会自动连 <code>&lt;主域名&gt;:443</code> 比对线上证书指纹：reload 由本工具触发时，线上仍是旧证书会标记为部署异常；「仅复制」模式下仅提示参考。域名不出网或 443 不可达时自动跳过。</li>
-              </ul>
-            </el-collapse-item>
-          </el-collapse>
-        </el-card>
-
-        <el-card shadow="never" class="detail-card">
           <template #header>实时日志（本证书）</template>
           <LiveLog :certificate-id="certId" height="420px" />
         </el-card>
@@ -523,42 +363,6 @@ async function runDeployNow(): Promise<void> {
 .path-sub {
   color: #909399;
   font-size: 11px;
-}
-.mono-input :deep(input) {
-  font-family: ui-monospace, Menlo, Consolas, monospace;
-}
-.form-hint {
-  width: 100%;
-  line-height: 1.5;
-}
-.deploy-status {
-  margin-bottom: 4px;
-}
-.target-block {
-  border: 1px solid #e4e7ed;
-  border-radius: 6px;
-  padding: 12px;
-  margin-bottom: 12px;
-}
-.target-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
-}
-.target-name {
-  width: 220px;
-}
-.deploy-actions {
-  display: flex;
-  gap: 4px;
-  margin-top: 4px;
-}
-.deploy-help :deep(.el-collapse-item__header) {
-  font-size: 12px;
-  color: #909399;
-  height: 32px;
-  line-height: 32px;
 }
 .help-list {
   margin: 0;

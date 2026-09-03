@@ -1,21 +1,11 @@
 import fs from 'node:fs';
-import crypto from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { desc, eq } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { certificates, dnsProviders } from '../db/schema.js';
 import { enqueue } from '../services/queue.js';
 import { issueFlow, renewFlow, removeFlow } from '../services/cert-ops.js';
-import { deployCert } from '../services/deploy.js';
-import {
-  type DeployTarget,
-  filesFor,
-  hasEnabledTargets,
-  isValidDomain,
-  readCertInfo,
-  targetsOf,
-  toView,
-} from '../services/certificates.js';
+import { filesFor, isValidDomain, readCertInfo, toView } from '../services/certificates.js';
 import { logEvent } from '../services/logger.js';
 import { getAccountEmail } from '../services/settings.js';
 
@@ -165,76 +155,6 @@ export async function certificateRoutes(app: FastifyInstance): Promise<void> {
     if (cert.status === 'issuing') return reply.code(409).send({ error: '该证书正在执行任务，无法删除' });
     await removeFlow(cert);
     return { ok: true };
-  });
-
-  /** 保存部署目标列表（整体替换；enabled=false 的目标仅原样保存，不再校验其余字段） */
-  app.put<{ Params: { id: string } }>('/certificates/:id/deploy', async (req, reply) => {
-    const id = parseId(req.params.id);
-    const cert = id ? getCertOrNull(id) : null;
-    if (!cert) return reply.code(404).send({ error: '证书不存在' });
-    const body = (req.body ?? {}) as Record<string, unknown>;
-    const raw = Array.isArray(body.targets) ? body.targets : null;
-    if (!raw) return reply.code(400).send({ error: '请求体需为 { targets: [...] }' });
-    if (raw.length > 10) return reply.code(400).send({ error: '部署目标最多 10 个' });
-
-    const prev = targetsOf(cert);
-    const targets: DeployTarget[] = [];
-    for (const [i, item] of raw.entries()) {
-      const t = (item ?? {}) as Record<string, unknown>;
-      const enabled = t.enabled === true;
-      const mode = String(t.mode ?? 'none');
-      if (!['none', 'command', 'docker'].includes(mode)) {
-        return reply.code(400).send({ error: `第 ${i + 1} 个目标：不支持的 reload 方式` });
-      }
-      const targetDir = String(t.targetDir ?? '').trim();
-      const cmd = String(t.cmd ?? '').trim();
-      const container = String(t.container ?? '').trim();
-      if (enabled) {
-        if (!targetDir) return reply.code(400).send({ error: `第 ${i + 1} 个目标：启用后必须填写目标目录` });
-        if (!targetDir.startsWith('/') || targetDir.includes('..')) {
-          return reply.code(400).send({ error: `第 ${i + 1} 个目标：目标目录必须是容器内绝对路径，且不能包含 ..` });
-        }
-        if (mode === 'command' && !cmd) return reply.code(400).send({ error: `第 ${i + 1} 个目标：请填写 reload 命令` });
-        if (mode === 'docker' && !container) {
-          return reply.code(400).send({ error: `第 ${i + 1} 个目标：请填写要 reload 的 Docker 容器名` });
-        }
-      }
-      // 保留既有目标的状态字段（lastRunAt/lastError），新目标从空开始
-      const old = typeof t.id === 'string' && t.id ? prev.find((p) => p.id === t.id) : undefined;
-      targets.push({
-        id: old?.id ?? crypto.randomUUID().slice(0, 8),
-        name: String(t.name ?? '').trim().slice(0, 50) || `目标 ${i + 1}`,
-        enabled,
-        mode: mode as DeployTarget['mode'],
-        targetDir,
-        cmd,
-        container,
-        lastRunAt: old?.lastRunAt ?? null,
-        lastError: old?.lastError ?? null,
-      });
-    }
-
-    db.update(certificates)
-      .set({
-        deployTargets: JSON.stringify(targets),
-        // 清掉旧版单目标列，targetsOf 不会再回落到旧值
-        deployEnabled: false,
-        deployTargetDir: '',
-        updatedAt: new Date().toISOString(),
-      })
-      .where(eq(certificates.id, cert.id))
-      .run();
-    return { certificate: toView(getCertOrNull(cert.id) ?? cert) };
-  });
-
-  /** 立即执行一次部署（所有已启用目标：复制 + reload + 线上验证），用于初始配置或验证 */
-  app.post<{ Params: { id: string } }>('/certificates/:id/deploy/run', async (req, reply) => {
-    const id = parseId(req.params.id);
-    const cert = id ? getCertOrNull(id) : null;
-    if (!cert) return reply.code(404).send({ error: '证书不存在' });
-    if (!hasEnabledTargets(cert)) return reply.code(400).send({ error: '请先添加并启用至少一个部署目标' });
-    const result = await deployCert(cert);
-    return { ok: result.ok, message: result.message, certificate: toView(getCertOrNull(cert.id) ?? cert) };
   });
 
   app.get<{ Params: { id: string } }>('/certificates/:id/download', async (req, reply) => {

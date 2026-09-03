@@ -11,80 +11,13 @@ export type Certificate = InferSelectModel<typeof certificates>;
 
 export type DisplayStatus = 'issuing' | 'ok' | 'expiring' | 'expired' | 'error';
 
-/** 单个部署目标（certificates.deployTargets JSON 数组中的一项） */
-export interface DeployTarget {
-  id: string;
-  name: string;
-  enabled: boolean;
-  /** none（仅复制） | command（容器内命令） | docker（Docker 容器） */
-  mode: 'none' | 'command' | 'docker';
-  /** 容器内绝对路径 */
-  targetDir: string;
-  cmd: string;
-  container: string;
-  lastRunAt: string | null;
-  lastError: string | null;
-}
-
-function isDeployTarget(v: unknown): v is DeployTarget {
-  if (typeof v !== 'object' || v === null) return false;
-  const t = v as Record<string, unknown>;
-  return (
-    typeof t.id === 'string' &&
-    typeof t.name === 'string' &&
-    typeof t.targetDir === 'string' &&
-    typeof t.cmd === 'string' &&
-    typeof t.container === 'string' &&
-    typeof t.enabled === 'boolean' &&
-    (t.mode === 'none' || t.mode === 'command' || t.mode === 'docker') &&
-    (t.lastRunAt === null || typeof t.lastRunAt === 'string') &&
-    (t.lastError === null || typeof t.lastError === 'string')
-  );
-}
-
-/**
- * 读取部署目标列表。deployTargets 列有值时直接解析；
- * 旧版单目标列（deployEnabled/deployTargetDir/...）自动折算成一项，保存新配置后即完成迁移。
- */
-export function targetsOf(cert: Certificate): DeployTarget[] {
-  const raw = cert.deployTargets?.trim();
-  if (raw) {
-    try {
-      const parsed = JSON.parse(raw) as unknown;
-      if (Array.isArray(parsed)) return parsed.filter(isDeployTarget);
-    } catch {
-      // JSON 损坏时回落到旧列
-    }
-  }
-  const dir = (cert.deployTargetDir ?? '').trim();
-  if (!dir) return [];
-  return [
-    {
-      id: 'legacy',
-      name: '默认目标',
-      enabled: cert.deployEnabled,
-      mode: (cert.deployMode ?? 'none') as DeployTarget['mode'],
-      targetDir: dir,
-      cmd: cert.deployCmd ?? '',
-      container: cert.deployContainer ?? '',
-      lastRunAt: cert.lastDeployAt ?? null,
-      lastError: cert.lastDeployError ?? null,
-    },
-  ];
-}
-
-export function hasEnabledTargets(cert: Certificate): boolean {
-  return targetsOf(cert).some((t) => t.enabled);
-}
-
-export interface CertificateView extends Omit<Certificate, 'domains' | 'deployTargets'> {
+export interface CertificateView extends Omit<Certificate, 'domains'> {
   domains: string[];
   daysLeft: number | null;
   displayStatus: DisplayStatus;
   /** 宿主机视角的文件路径（未运行在容器或未识别到挂载时与 certPath 相同） */
   hostCertPath: string | null;
   hostKeyPath: string | null;
-  deployTargets: DeployTarget[];
 }
 
 export interface CertInfo {
@@ -224,6 +157,5 @@ export function toView(cert: Certificate): CertificateView {
     displayStatus: displayStatusOf(cert),
     hostCertPath: toHostPath(cert.certPath),
     hostKeyPath: toHostPath(cert.keyPath),
-    deployTargets: targetsOf(cert),
   };
 }

@@ -29,6 +29,13 @@
       "when": 1788492000000,
       "tag": "0003_multi_deploy_targets",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1788414672557,
+      "tag": "0004_complete_liz_osborn",
+      "breakpoints": true
     }
   ]
 }

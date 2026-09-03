@@ -23,9 +23,3 @@ services:
       - ./storage:/app/storage
       # acme.sh 自身目录（账户、ACME 状态），与宿主机 ~/.acme.sh 互不影响
       - ./acme.sh:/app/acme.sh
-      # ── 证书自动部署（按需取消注释）──
-      # 复制式部署：把宿主目录挂进容器，Web UI「自动部署」目标目录填 /deploy/nginx-certs，
-      # 证书会出现在宿主机 ./deploy/nginx-certs/<域名>/，供宿主机 nginx 等直接引用
-      # - ./deploy:/deploy
-      # 容器化 nginx/Caddy 自动 reload：挂载 docker socket（部署方式选「Docker 容器」）
-      # - /var/run/docker.sock:/var/run/docker.sock

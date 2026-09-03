@@ -10,7 +10,6 @@ import {
   type Certificate,
   daysLeftOf,
   filesFor,
-  hasEnabledTargets,
   isEccKey,
   parseDomains,
   readCertInfo,
@@ -18,7 +17,6 @@ import {
 import { getAccountEmail } from './settings.js';
 import { getProviderDef } from './dns-providers.js';
 import { type NotifyEvent, notifyQuietly } from './notifier.js';
-import { deployCert } from './deploy.js';
 import { sendDailyDigest } from './digest.js';
 
 function now(): string {
@@ -192,8 +190,6 @@ async function issueFlowInner(certId: number, opts: { force: boolean }): Promise
 
   if (!(await installCert(cert))) return false;
   refreshCertState(cert);
-  const deployed = getCert(certId) ?? cert;
-  if (hasEnabledTargets(deployed)) await deployCert(deployed);
   const updated = getCert(certId);
   const expires = updated?.expiresAt ? new Date(updated.expiresAt).toISOString().slice(0, 10) : '未知';
   logEvent('info', `${cert.primaryDomain} ${opts.force ? '重新签发' : '签发'}成功，有效期至 ${expires}`, certId);
@@ -283,8 +279,6 @@ async function renewFlowInner(certId: number): Promise<boolean> {
 
   if (!(await installCert(cert))) return false;
   refreshCertState(cert);
-  const deployed = getCert(certId) ?? cert;
-  if (hasEnabledTargets(deployed)) await deployCert(deployed);
   const updated = getCert(certId);
   const expires = updated?.expiresAt ? new Date(updated.expiresAt).toISOString().slice(0, 10) : '未知';
   logEvent('info', `${cert.primaryDomain} 续期成功，新有效期至 ${expires}`, certId);
