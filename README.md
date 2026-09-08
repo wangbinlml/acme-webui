@@ -1,4 +1,5 @@
 # Acme Manager
+[![cover](img/cover.jpg)](img/cover.jpg)
 
 独立的 SSL 证书管理器（类似宝塔 SSL 模块）：以 [acme.sh](https://github.com/acmesh-official/acme.sh) 为签发引擎，自带证书配置、ACME 账户、自动续期调度与 Web 管理界面，支持 Let's Encrypt / ZeroSSL，HTTP-01 / DNS-01 双验证，通配符证书。
 
@@ -49,14 +50,14 @@ docker compose down
 ```
 
 打开 http://127.0.0.1:28080 （默认只绑定本机回环地址）。
-
+[![cover](img/main.png)](img/main.png)
 使用流程：
 
 1. 首次打开按提示**初始化管理员账号**（用户名 + 密码，仅一次）；其他成员可在「用户管理」页添加（可设为只读 viewer）
 2. **DNS API** 页添加 DNS Provider（如 Cloudflare 的 API Token），点「测试连接」确认可用
 3. **设置** 页填写账户邮箱（ZeroSSL 必需，Let's Encrypt 建议填写）；按需在「通知推送」配置企业微信 / 飞书群机器人并点「保存并发送测试」
 4. **证书管理 → 创建证书**：填主域名 / SAN，选 CA、算法、验证方式（DNS-01 需选 Provider），创建后自动开始签发，详情页可看 acme.sh 实时输出
-5. 签发成功后即可在详情页下载 `fullchain.pem` / `privkey.pem`，或直接从宿主机 `./storage/certificates/<主域名>/`（如 `szzh.vip/`、`szzh.vip-wildcard/`） 取用
+5. 签发成功后即可在详情页下载 `fullchain.pem` / `privkey.pem`，或直接从宿主机 `./storage/certificates/<主域名>/`（如 `domain.com/`、`domain.com-wildcard/`） 取用
 6. 需要把证书自动同步到这台或别的服务器上的 nginx/Caddy？见下节「多主机分发」，一条命令装好
 
 > HTTP-01（standalone）验证要求宿主机 80 端口空闲且公网可达，compose 默认**不映射** 80 端口（避免与服务器上已有的 Web 服务冲突，被占用时报 `bind: address already in use`）；只用 DNS-01 时无需任何改动。确需 HTTP-01 时，在 docker-compose.yml 里取消 `- "80:80"` 的注释。
