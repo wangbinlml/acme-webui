@@ -88,7 +88,7 @@ async function deleteTarget(id: number, ip: string): Promise<void> {
     <el-card shadow="never">
       <template #header>全部分发目标</template>
       <el-table :data="targets" style="width: 100%">
-        <el-table-column label="域名" min-width="180">
+        <el-table-column label="域名" width="150">
           <template #default="{ row }">
             <el-link v-if="row.certId" type="primary" :underline="false" @click="router.push(`/certificates/${row.certId}`)">
               {{ row.primaryDomain }}
