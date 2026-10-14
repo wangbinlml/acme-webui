@@ -88,7 +88,7 @@ async function deleteTarget(id: number, ip: string): Promise<void> {
     <el-card shadow="never">
       <template #header>全部分发目标</template>
       <el-table :data="targets" style="width: 100%">
-        <el-table-column label="域名" width="150">
+        <el-table-column label="域名">
           <template #default="{ row }">
             <el-link v-if="row.certId" type="primary" :underline="false" @click="router.push(`/certificates/${row.certId}`)">
               {{ row.primaryDomain }}
@@ -96,28 +96,28 @@ async function deleteTarget(id: number, ip: string): Promise<void> {
             <span v-else>{{ row.primaryDomain }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="服务器 IP" width="140">
+        <el-table-column label="服务器 IP">
           <template #default="{ row }">
             {{ row.ip }}
             <el-tag v-if="row.stale" type="warning" size="small" style="margin-left: 4px">失联</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="部署模式" width="130">
+        <el-table-column label="部署模式">
           <template #default="{ row }">{{ reloadModeLabel(row.reloadMode, row.container) }}</template>
         </el-table-column>
-        <el-table-column label="标签" width="120">
+        <el-table-column label="标签">
           <template #default="{ row }">
             <el-tag v-for="t in row.tags" :key="t" size="small" style="margin: 2px">{{ t }}</el-tag>
             <span v-if="row.tags.length === 0" class="muted">—</span>
           </template>
         </el-table-column>
-        <el-table-column label="最后同步" width="160">
+        <el-table-column label="最后同步">
           <template #default="{ row }">
             <span v-if="row.lastSyncAt">{{ formatDate(row.lastSyncAt) }}</span>
             <span v-else class="muted">—</span>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="80">
+        <el-table-column label="状态">
           <template #default="{ row }">
             <el-tag v-if="row.lastSyncStatus" :type="syncStatusType(row.lastSyncStatus)" size="small">
               {{ syncStatusLabel(row.lastSyncStatus) }}
@@ -125,7 +125,7 @@ async function deleteTarget(id: number, ip: string): Promise<void> {
             <span v-else class="muted">—</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="canWrite()" label="操作" width="60">
+        <el-table-column v-if="canWrite()" label="操作">
           <template #default="{ row }">
             <el-button link type="danger" size="small" @click="deleteTarget(row.id, row.ip)">删除</el-button>
           </template>
