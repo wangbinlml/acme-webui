@@ -27,20 +27,31 @@
 git status   # 确认无未提交的改动
 ```
 
-### 2. 打 tag 触发发布
+### 2. 更新版本号（重要，勿漏）
+
+修改 `server/package.json` 的 `version` 字段，与即将打的 tag 保持一致（页面侧边栏显示的版本号来自这里）：
+
+```json
+"version": "0.2.2",
+```
 
 ```bash
-git add -A
-git commit -m "feat: 分发记录/导入/批量操作/吊销/标签/总览页 + Docker 发布配置"
-git tag v0.2.0 # 版本号按需递增
-git push origin main --tags # 推送 tag 触发自动构建
+git add server/package.json
+git commit -m "chore: bump version to 0.2.2"
+```
+
+### 3. 打 tag 触发发布
+
+```bash
+git tag v0.2.2                # 版本号与上一步 package.json 一致
+git push origin main --tags   # 推送 tag 触发自动构建
 ```
 
 ### 3. 查看构建进度
 
 - GitHub 仓库 → Actions 页面，查看 `Publish Docker Image` 工作流状态
 - 构建约 10-15 分钟（amd64 + arm64 双架构）
-- 构建完成后镜像自动出现在 https://hub.docker.com/r/wangbinlml/acme-manager
+- 构建完成后镜像自动出现在 https://hub.docker.com/repositories/wangbinlml
 - **GitHub Release 自动创建**：镜像推送成功后，工作流会基于 tag 自动创建 Release，更新日志由 GitHub 从 commit 记录自动生成，并附上拉取命令。可在仓库 Releases 页面查看或编辑补充说明
 
 ### 4. 验证
