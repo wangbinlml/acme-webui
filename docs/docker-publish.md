@@ -41,6 +41,7 @@ git push origin main --tags # 推送 tag 触发自动构建
 - GitHub 仓库 → Actions 页面，查看 `Publish Docker Image` 工作流状态
 - 构建约 10-15 分钟（amd64 + arm64 双架构）
 - 构建完成后镜像自动出现在 https://hub.docker.com/r/wangbinlml/acme-manager
+- **GitHub Release 自动创建**：镜像推送成功后，工作流会基于 tag 自动创建 Release，更新日志由 GitHub 从 commit 记录自动生成，并附上拉取命令。可在仓库 Releases 页面查看或编辑补充说明
 
 ### 4. 验证
 
