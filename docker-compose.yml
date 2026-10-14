@@ -1,7 +1,8 @@
 services:
   acme-manager:
+    # 已发布到 Docker Hub，默认直接拉取；需本地构建时加 --build 参数
+    image: wangbinlml/acme-manager:latest
     build: .
-    image: acme-manager:latest
     container_name: acme-manager
     restart: unless-stopped
     ports:

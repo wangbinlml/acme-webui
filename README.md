@@ -48,7 +48,8 @@
 
 ```bash
 git clone <repo> acme-manager && cd acme-manager
-docker compose up -d --build
+docker compose up -d          # 自动拉取已发布的镜像
+# docker compose up -d --build  # 本地构建（修改源码后用）
 docker compose down
 ```
 
