@@ -1,0 +1,1 @@
+ALTER TABLE `distribute_targets` ADD COLUMN `tags` text;

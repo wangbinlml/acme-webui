@@ -1,11 +1,12 @@
 import fs from 'node:fs';
+import { createPrivateKey } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { desc, eq } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { certificates, dnsProviders } from '../db/schema.js';
 import { enqueue } from '../services/queue.js';
 import { issueFlow, renewFlow, removeFlow } from '../services/cert-ops.js';
-import { filesFor, isValidDomain, readCertInfo, toView } from '../services/certificates.js';
+import { filesFor, isValidDomain, parseCertPem, readCertInfo, toView } from '../services/certificates.js';
 import { logEvent } from '../services/logger.js';
 import { getAccountEmail } from '../services/settings.js';
 
@@ -104,6 +105,92 @@ export async function certificateRoutes(app: FastifyInstance): Promise<void> {
     return reply.code(201).send({ certificate: toView(row) });
   });
 
+  app.post('/certificates/import', async (req, reply) => {
+    const body = (req.body ?? {}) as { fullchain?: string; privkey?: string; autoRenew?: boolean; renewBeforeDays?: number };
+    const fullchain = String(body.fullchain ?? '').trim();
+    const privkey = String(body.privkey ?? '').trim();
+    if (!fullchain || !privkey) {
+      return reply.code(400).send({ error: '需要提供 fullchain 和 privkey PEM 内容' });
+    }
+    if (!fullchain.includes('BEGIN CERTIFICATE') || !privkey.includes('PRIVATE KEY')) {
+      return reply.code(400).send({ error: 'PEM 内容格式不正确（fullchain 需含 BEGIN CERTIFICATE，privkey 需含 PRIVATE KEY）' });
+    }
+
+    let info;
+    try {
+      info = parseCertPem(fullchain);
+    } catch {
+      return reply.code(400).send({ error: '无法解析证书，请检查 fullchain PEM 内容' });
+    }
+
+    // 从 CN 或 SAN 推断主域名
+    const cn = info.subject.match(/CN=([^,\n]+)/)?.[1]?.trim() ?? '';
+    const primaryDomain = (cn || info.sans[0] || '').toLowerCase();
+    if (!primaryDomain || !isValidDomain(primaryDomain)) {
+      return reply.code(400).send({ error: '无法从证书中识别有效域名，请手动创建' });
+    }
+
+    // 从 Issuer 推断 CA
+    const issuer = info.issuer.toLowerCase();
+    const ca = issuer.includes("let's encrypt") || issuer.includes('r3') || issuer.includes('r10') || issuer.includes('r11')
+      ? 'letsencrypt'
+      : issuer.includes('zerossl')
+        ? 'zerossl'
+        : 'imported';
+
+    // 从私钥推断密钥算法
+    let keyType = 'rsa-2048';
+    try {
+      const key = createPrivateKey(privkey);
+      if (key.asymmetricKeyType === 'ec') {
+        const curve = (key.asymmetricKeyDetails as { namedCurve?: string } | undefined)?.namedCurve;
+        keyType = curve === 'secp384r1' ? 'ec-384' : 'ec-256';
+      } else if (key.asymmetricKeyType === 'rsa') {
+        keyType = 'rsa-2048';
+      }
+    } catch {
+      // 无法检测则默认 rsa-2048
+    }
+
+    const domains = [primaryDomain, ...info.sans.filter((s) => s.toLowerCase() !== primaryDomain)];
+    const renewBeforeDays = Math.min(Math.max(Number(body.renewBeforeDays ?? 30) || 30, 1), 89);
+    const autoRenew = body.autoRenew === true;
+    const ts = new Date().toISOString();
+
+    const row = db
+      .insert(certificates)
+      .values({
+        primaryDomain,
+        domains: JSON.stringify(domains),
+        ca,
+        keyType,
+        challengeType: 'imported',
+        status: 'valid',
+        autoRenew,
+        renewBeforeDays,
+        issuedAt: info.validFrom,
+        expiresAt: info.validTo,
+        createdAt: ts,
+        updatedAt: ts,
+      })
+      .returning()
+      .all()[0];
+
+    // 保存证书文件到受管理目录
+    const files = filesFor({ id: row.id, primaryDomain });
+    fs.mkdirSync(files.dir, { recursive: true });
+    fs.writeFileSync(files.fullchain, fullchain);
+    fs.writeFileSync(files.key, privkey);
+    fs.writeFileSync(files.cert, fullchain.split('-----END CERTIFICATE-----')[0] + '-----END CERTIFICATE-----\n');
+    db.update(certificates)
+      .set({ certPath: files.fullchain, keyPath: files.key, updatedAt: new Date().toISOString() })
+      .where(eq(certificates.id, row.id))
+      .run();
+
+    logEvent('info', `导入证书 ${primaryDomain}（CA: ${ca}，到期 ${info.validTo ?? '未知'}）`, row.id);
+    return reply.code(201).send({ certificate: toView(getCertOrNull(row.id) ?? row) });
+  });
+
   app.post<{ Params: { id: string } }>('/certificates/:id/renew', async (req, reply) => {
     const id = parseId(req.params.id);
     const cert = id ? getCertOrNull(id) : null;
@@ -153,8 +240,9 @@ export async function certificateRoutes(app: FastifyInstance): Promise<void> {
     const cert = id ? getCertOrNull(id) : null;
     if (!cert) return reply.code(404).send({ error: '证书不存在' });
     if (cert.status === 'issuing') return reply.code(409).send({ error: '该证书正在执行任务，无法删除' });
-    await removeFlow(cert);
-    return { ok: true };
+    const revoke = (req.query as { revoke?: string })?.revoke === 'true';
+    const result = await removeFlow(cert, { revoke });
+    return { ok: true, revoked: result.revoked, revokeError: result.revokeError };
   });
 
   app.get<{ Params: { id: string } }>('/certificates/:id/download', async (req, reply) => {

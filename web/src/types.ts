@@ -129,3 +129,21 @@ export interface SettingsData {
   hasDistributeToken: boolean;
   notify: NotifySettings;
 }
+
+export interface DistributeTarget {
+  id: number;
+  primaryDomain: string;
+  ip: string;
+  reloadMode: string | null;
+  container: string | null;
+  certDir: string | null;
+  firstSeenAt: string;
+  lastSyncAt: string | null;
+  lastSyncStatus: string | null;
+  lastSyncMessage: string | null;
+  syncCount: number;
+  tags: string[];
+  stale: boolean;
+  createdAt: string;
+  updatedAt: string;
+}

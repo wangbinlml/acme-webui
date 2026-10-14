@@ -285,8 +285,33 @@ async function renewFlowInner(certId: number): Promise<boolean> {
   return true;
 }
 
-/** 删除证书：移除 acme.sh 记录、本地文件与数据库记录 */
-export async function removeFlow(cert: Certificate): Promise<void> {
+/** 删除证书：可选先向 CA 吊销，再移除 acme.sh 记录、本地文件与数据库记录 */
+export async function removeFlow(
+  cert: Certificate,
+  opts?: { revoke?: boolean },
+): Promise<{ revoked: boolean; revokeError?: string }> {
+  const result = { revoked: false, revokeError: undefined as string | undefined };
+
+  // 吊销（向 CA 发送 revoke 请求，使证书立即失效）
+  if (opts?.revoke) {
+    try {
+      const args = ['--revoke', '-d', cert.primaryDomain];
+      if (isEccKey(cert.keyType)) args.push('--ecc');
+      args.push(...baseArgs());
+      const res = await runAcme(args, { label: cert.primaryDomain });
+      if (res.code === 0) {
+        result.revoked = true;
+        logEvent('warn', `已向 CA 吊销 ${cert.primaryDomain}`, cert.id);
+      } else {
+        result.revokeError = `acme.sh 退出码 ${res.code}`;
+        logEvent('warn', `吊销 ${cert.primaryDomain} 未成功（${result.revokeError}），继续删除本地记录`, cert.id);
+      }
+    } catch (err) {
+      result.revokeError = err instanceof Error ? err.message : String(err);
+      logEvent('warn', `吊销 ${cert.primaryDomain} 失败：${result.revokeError}，继续删除本地记录`, cert.id);
+    }
+  }
+
   try {
     const args = ['--remove', '-d', cert.primaryDomain];
     if (isEccKey(cert.keyType)) args.push('--ecc');
@@ -304,7 +329,8 @@ export async function removeFlow(cert: Certificate): Promise<void> {
     // 目录不存在时忽略
   }
   db.delete(certificates).where(eq(certificates.id, cert.id)).run();
-  logEvent('info', `已删除证书 ${cert.primaryDomain}`, cert.id);
+  logEvent('info', `已删除证书 ${cert.primaryDomain}${result.revoked ? '（已向 CA 吊销）' : ''}`, cert.id);
+  return result;
 }
 
 /** 续期扫描：到期前 renewBeforeDays 天内的证书逐个续期 */

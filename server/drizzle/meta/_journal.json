@@ -36,6 +36,20 @@
       "when": 1788414672557,
       "tag": "0004_complete_liz_osborn",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1788500000000,
+      "tag": "0005_distribute_targets",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1788600000000,
+      "tag": "0006_distribute_target_tags",
+      "breakpoints": true
     }
   ]
 }

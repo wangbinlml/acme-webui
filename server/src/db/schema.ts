@@ -1,4 +1,4 @@
-import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 export const certificates = sqliteTable('certificates', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -69,3 +69,34 @@ export const sessions = sqliteTable('sessions', {
   expiresAt: text('expires_at').notNull(),
   createdAt: text('created_at').notNull(),
 });
+
+export const distributeTargets = sqliteTable(
+  'distribute_targets',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    primaryDomain: text('primary_domain').notNull(),
+    /** 目标服务器 IP（来自 req.ip） */
+    ip: text('ip').notNull(),
+    /** nginx | docker */
+    reloadMode: text('reload_mode'),
+    /** Docker 容器名（docker 模式时） */
+    container: text('container'),
+    /** 目标机上的证书目录 */
+    certDir: text('cert_dir'),
+    /** 首次安装时间 */
+    firstSeenAt: text('first_seen_at').notNull(),
+    /** 最后同步时间 */
+    lastSyncAt: text('last_sync_at'),
+    /** success | no_change | error */
+    lastSyncStatus: text('last_sync_status'),
+    lastSyncMessage: text('last_sync_message'),
+    syncCount: integer('sync_count').notNull().default(0),
+    /** 逗号分隔的标签（如 "生产,集群A"） */
+    tags: text('tags'),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => ({
+    domainIpIdx: uniqueIndex('distribute_targets_domain_ip_idx').on(table.primaryDomain, table.ip),
+  }),
+);

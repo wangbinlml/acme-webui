@@ -19,6 +19,12 @@ const router = createRouter({
       meta: { title: '创建证书', requiresAdmin: true },
     },
     {
+      path: '/certificates/import',
+      name: 'cert-import',
+      component: () => import('../views/ImportCertificateView.vue'),
+      meta: { title: '导入证书', requiresAdmin: true },
+    },
+    {
       path: '/certificates/:id',
       name: 'cert-detail',
       component: () => import('../views/CertificateDetailView.vue'),

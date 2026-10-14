@@ -4,6 +4,7 @@ import type {
   CertInfo,
   DashboardData,
   DnsProviderView,
+  DistributeTarget,
   NotifyTestResult,
   PersistedLog,
   ProviderTypeDef,
@@ -54,6 +55,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  importCert: (payload: { fullchain: string; privkey: string; autoRenew?: boolean; renewBeforeDays?: number }) =>
+    request<{ certificate: CertificateView }>('/api/certificates/import', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   renewCert: (id: number) =>
     request<{ certificate: CertificateView }>(`/api/certificates/${id}/renew`, { method: 'POST' }),
   reissueCert: (id: number) =>
@@ -63,7 +69,11 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(patch),
     }),
-  deleteCert: (id: number) => request<{ ok: boolean }>(`/api/certificates/${id}`, { method: 'DELETE' }),
+  deleteCert: (id: number, revoke?: boolean) =>
+    request<{ ok: boolean; revoked?: boolean; revokeError?: string }>(
+      `/api/certificates/${id}${revoke ? '?revoke=true' : ''}`,
+      { method: 'DELETE' },
+    ),
 
   providerTypes: () => request<{ types: ProviderTypeDef[] }>('/api/dns-provider-types'),
   listProviders: () => request<{ providers: DnsProviderView[] }>('/api/dns-providers'),
@@ -123,6 +133,15 @@ export const api = {
   getDistributeToken: () => request<{ token: string | null }>('/api/distribute/token'),
   createDistributeToken: () => request<{ token: string }>('/api/distribute/token', { method: 'POST' }),
   revokeDistributeToken: () => request<{ ok: boolean }>('/api/distribute/token', { method: 'DELETE' }),
+  listDistributeTargets: (domain: string) =>
+    request<{ targets: DistributeTarget[] }>(`/api/distribute/targets?domain=${encodeURIComponent(domain)}`),
+  deleteDistributeTarget: (id: number) =>
+    request<{ ok: boolean }>(`/api/distribute/targets/${id}`, { method: 'DELETE' }),
+  updateDistributeTargetTags: (id: number, tags: string[]) =>
+    request<{ ok: boolean }>(`/api/distribute/targets/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ tags }),
+    }),
   runRenewScan: () => request<{ started: boolean; message: string }>('/api/renew/run', { method: 'POST' }),
 
   health: () => request<{ ok: boolean; version: string; acmeAvailable: boolean }>('/api/health'),

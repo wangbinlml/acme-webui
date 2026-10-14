@@ -40,11 +40,15 @@ export function formatTimeOnly(iso: string): string {
 }
 
 export function caLabel(ca: string): string {
-  return ca === 'zerossl' ? 'ZeroSSL' : "Let's Encrypt";
+  if (ca === 'zerossl') return 'ZeroSSL';
+  if (ca === 'imported') return '导入';
+  return "Let's Encrypt";
 }
 
 export function challengeLabel(type: string): string {
-  return type === 'dns01' ? 'DNS-01' : 'HTTP-01';
+  if (type === 'dns01') return 'DNS-01';
+  if (type === 'imported') return '导入';
+  return 'HTTP-01';
 }
 
 export function keyTypeLabel(keyType: string): string {

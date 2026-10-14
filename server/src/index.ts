@@ -3,10 +3,10 @@ import path from 'node:path';
 import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import cron from 'node-cron';
-import { eq } from 'drizzle-orm';
+import { eq, lt } from 'drizzle-orm';
 import { acmeAvailable, config, ensureDirs } from './config.js';
 import { db, runMigrations, appliedRestore } from './db/index.js';
-import { certificates } from './db/schema.js';
+import { certificates, distributeTargets } from './db/schema.js';
 import { logEvent, runLogRetention } from './services/logger.js';
 import { enqueue } from './services/queue.js';
 import { runRenewalScan } from './services/cert-ops.js';
@@ -65,7 +65,7 @@ async function main(): Promise<void> {
       if (authorization.slice(7).trim() !== saved) {
         return reply.code(401).send({ error: '分发 Token 不正确' });
       }
-      if (url !== '/api/distribute/file' && url !== '/api/distribute/install.sh') {
+      if (url !== '/api/distribute/file' && url !== '/api/distribute/install.sh' && url !== '/api/distribute/report') {
         return reply.code(403).send({ error: '分发 Token 仅限证书分发接口' });
       }
       return;
@@ -122,6 +122,9 @@ async function main(): Promise<void> {
   cron.schedule(config.renewCron, () => {
     // 顺带做日志/会话清理（秒级完成，不进任务队列）
     runLogRetention();
+    // 清理 30 天未同步的分发目标记录
+    const staleCutoff = new Date(Date.now() - 30 * 86_400_000).toISOString();
+    db.delete(distributeTargets).where(lt(distributeTargets.lastSyncAt, staleCutoff)).run();
     void enqueue(() => runRenewalScan('cron'));
   });
 

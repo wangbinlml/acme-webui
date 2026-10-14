@@ -8,12 +8,15 @@
 ## 功能
 
 - **仪表盘**：证书总数 / 正常 / 即将过期 / 异常一览，最近签发的证书
-- **证书管理**：签发、续期、重新签发、下载（fullchain / cert / key / CA）、删除、详情（解析证书 Subject / SAN / 指纹 / 剩余天数）
+- **证书管理**：签发、续期、重新签发、下载（fullchain / cert / key / CA）、删除（可选同时向 CA 吊销）、详情（解析证书 Subject / SAN / 指纹 / 剩余天数）
+- **证书导入**：支持导入由其他工具签发的证书（商业 CA、其他 acme.sh 实例等），自动解析域名、CA、有效期与密钥算法
+- **批量操作**：证书列表页多选后可批量续期、批量删除
 - **创建证书**：主域名 + SAN 多域名、通配符（自动强制 DNS-01）、CA 二选一（Let's Encrypt / ZeroSSL）、密钥算法（EC-256 / EC-384 / RSA-2048）
 - **DNS API**：Cloudflare / 腾讯云 DNSPod / 阿里云 / 华为云 / GoDaddy / Namecheap / AWS Route53，凭据入库（编辑时脱敏显示），Cloudflare 与 DNSPod 支持真实「测试连接」
 - **自动续期**：自有数据库调度，每天 03:00 扫描，剩余天数低于阈值（默认 30，每张证书可调）自动续期，成功更新状态、失败记日志
+- **多主机分发**：一条命令在目标服务器装好定时同步；管理侧自动记录已分发的服务器（IP、部署模式、证书目录、同步状态），支持目标标签分组、失联标记、手动删除与过期清理
 - **日志**：acme.sh 输出实时流（SSE，含断线回放）+ 历史日志查询
-- **通知推送**：企业微信 / 飞书群机器人，续期成功 / 失败自动推送（含域名、CA、新到期时间 / 错误摘要），飞书支持签名校验，设置页可发送测试消息
+- **通知推送**：企业微信 / 飞书群机器人，续期成功 / 失败自动推送（含域名、CA、新到期时间 / 错误摘要），分发同步失败首次触发时告警，每日巡检汇总包含同步异常项，飞书支持签名校验，设置页可发送测试消息
 - **多用户与登录认证**：首次访问初始化管理员；admin（全部权限）/ viewer（只读）两种角色；HttpOnly Cookie 会话（7 天）；登录失败 5 次锁定 10 分钟；用户管理页支持添加、重置密码、改角色、删除
 
 ## 架构
@@ -85,6 +88,17 @@ curl -fsSL -H 'Authorization: Bearer <token>' \
 Web 服务器配置直接指向该目录：`ssl_certificate /etc/nginx/certs/example.com/fullchain.pem;`
 
 卸载：`rm -rf /etc/acme-distribute /usr/local/bin/acme-distribute-pull /etc/cron.d/acme-distribute /var/log/acme-distribute.log`
+
+### 分发记录与监控
+
+安装和每次同步时，目标机会自动向管理机上报配置与结果，管理侧在证书详情页的分发弹窗中可以看到：
+
+- **已分发服务器列表**：IP、部署模式（nginx / Docker 容器名）、证书目录、标签
+- **同步状态**：最后同步时间、结果（已更新 / 无变化 / 失败）、同步次数
+- **失联标记**：超过 7 天未同步的目标自动标记为「失联」，每天定时清理 30 天未同步的记录
+- **标签分组**：可给每个目标打标签（如 `生产`、`集群A`），方便分组管理
+- **同步失败告警**：目标机同步从正常转为失败时，通过已配置的通知渠道（机器人 / Webhook / 邮件）推送告警；每日巡检汇总中也会列出所有同步异常项
+- **手动删除**：可删除已下线或不再需要的目标记录
 
 > 吊销或重新生成 Token 后，所有机器的自动同步会失败（已下载到各机器的证书文件不受影响），需用新命令重装。
 
@@ -197,9 +211,9 @@ acme-manager/
 - **续期**：不依赖 acme.sh 的 cron（安装时 `--nocron`）。每天 03:00 由本服务扫描数据库，对剩余天数 ≤ 阈值的证书执行 `--renew --force`，结果写回数据库并记录日志
 - **通知**：签发 / 续期结束（无论成败，手动或定时触发）后向所有已启用渠道推送。三个渠道可同时启用、互不影响，推送失败仅记日志告警，不影响主流程：
   - **机器人推送**：企业微信 / 飞书群机器人（含飞书签名校验）
-  - **Webhook**：向任意地址 POST JSON（`event` / `title` / `message` / `ok` / `domain` / `domains` / `ca` / `expiresAt` / `error` / `version` / `timestamp`），HTTP 2xx 视为成功，`event` 取值 `cert.issue.success|cert.issue.failed|cert.renew.success|cert.renew.failed|system.daily-digest|test`，适合对接 ntfy / Bark / 自建脚本
+  - **Webhook**：向任意地址 POST JSON（`event` / `title` / `message` / `ok` / `domain` / `domains` / `ca` / `expiresAt` / `error` / `version` / `timestamp`），HTTP 2xx 视为成功，`event` 取值 `cert.issue.success|cert.issue.failed|cert.renew.success|cert.renew.failed|distribute.sync.failed|system.daily-digest|test`，适合对接 ntfy / Bark / 自建脚本
   - **邮件**：内置零依赖 SMTP 客户端（465 SSL / 587·25 STARTTLS、AUTH LOGIN/PLAIN、UTF-8 主题与正文），支持多个收件人
-  - **每日巡检汇总**：每天定时扫描结束后发送一条 `system.daily-digest`（手动触发不推送）——存在已过期、状态异常、或 30 天内到期且自动续期已关闭的证书时逐条列出，全部正常时发一行心跳（兼作通知链路存活确认）
+  - **每日巡检汇总**：每天定时扫描结束后发送一条 `system.daily-digest`（手动触发不推送）——存在已过期、状态异常、30 天内到期且自动续期已关闭的证书、或分发同步失败的目标时逐条列出，全部正常时发一行心跳（兼作通知链路存活确认）
 - **隔离**：acme.sh 的 `--home` 指向本工具私有目录，账户注册、域名状态、证书缓存全部在内；删除 `data/ storage/ acme.sh/` 三个目录即彻底卸载
 
 ## 安全说明
@@ -214,6 +228,11 @@ acme-manager/
 - [x] Webhook 通知（签发 / 续期成功 / 失败）
 - [x] 邮件通知（企业微信 / 飞书机器人推送已在 v1 提供）
 - [x] 多用户与登录认证（admin / viewer 角色、登录限速、用户管理）
+- [x] 多主机分发（一条命令装好，自动定时同步，管理侧记录分发目标与同步状态）
+- [x] 证书导入（导入外部签发的证书，自动解析域名与有效期）
+- [x] 批量操作（批量续期 / 批量删除）
+- [x] 证书吊销（删除时可选向 CA 吊销）
+- [x] 分发目标管理（标签分组、失联标记、同步失败告警、自动清理）
 
 ## 技术栈
 

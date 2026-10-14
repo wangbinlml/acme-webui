@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { api } from '../api';
-import type { CertInfo, CertificateView } from '../types';
+import type { CertInfo, CertificateView, DistributeTarget } from '../types';
 import { canWrite } from '../auth';
 import StatusTag from '../components/StatusTag.vue';
 import LiveLog from '../components/LiveLog.vue';
@@ -118,6 +118,26 @@ function download(type: string): void {
 const distributeVisible = ref(false);
 const distributeLoading = ref(false);
 const distributeToken = ref<string | null>(null);
+const distributeTargets = ref<DistributeTarget[]>([]);
+
+/** 同步状态 → 标签类型映射 */
+function syncStatusType(status: string | null): 'success' | 'info' | 'warning' | 'danger' {
+  if (status === 'success') return 'success';
+  if (status === 'no_change') return 'info';
+  if (status === 'error') return 'danger';
+  return 'warning';
+}
+function syncStatusLabel(status: string | null): string {
+  if (status === 'success') return '已更新';
+  if (status === 'no_change') return '无变化';
+  if (status === 'error') return '失败';
+  return '未知';
+}
+function reloadModeLabel(mode: string | null, container: string | null): string {
+  if (mode === 'docker') return container ? `Docker（${container}）` : 'Docker';
+  if (mode === 'nginx') return 'nginx';
+  return '—';
+}
 
 /** 安装命令里的管理机地址取自当前浏览器地址栏——管理员怎么访问，目标机器就怎么访问 */
 const distributeCmd = computed(() => {
@@ -129,6 +149,15 @@ const distributeCmd = computed(() => {
 });
 const distributeDockerCmd = computed(() => (distributeCmd.value ? `${distributeCmd.value} -s -- --docker <nginx容器名>` : ''));
 
+async function loadDistributeTargets(): Promise<void> {
+  if (!cert.value) return;
+  try {
+    distributeTargets.value = (await api.listDistributeTargets(cert.value.primaryDomain)).targets;
+  } catch {
+    distributeTargets.value = [];
+  }
+}
+
 async function openDistribute(): Promise<void> {
   distributeVisible.value = true;
   distributeLoading.value = true;
@@ -139,6 +168,7 @@ async function openDistribute(): Promise<void> {
   } finally {
     distributeLoading.value = false;
   }
+  await loadDistributeTargets();
 }
 
 async function createDistributeToken(): Promise<void> {
@@ -159,6 +189,36 @@ async function copyText(text: string): Promise<void> {
     ElMessage.success('已复制到剪贴板');
   } catch {
     ElMessage.error('复制失败，请手动选择复制');
+  }
+}
+
+async function deleteDistributeTarget(id: number, ip: string): Promise<void> {
+  try {
+    await ElMessageBox.confirm(`确定删除分发目标 ${ip}？`, '删除目标', { type: 'warning' });
+  } catch {
+    return;
+  }
+  try {
+    await api.deleteDistributeTarget(id);
+    ElMessage.success('已删除');
+    await loadDistributeTargets();
+  } catch (e) {
+    ElMessage.error(errMessage(e));
+  }
+}
+
+async function editDistributeTargetTags(target: DistributeTarget): Promise<void> {
+  try {
+    const { value } = await ElMessageBox.prompt('多个标签用逗号分隔', '编辑标签', {
+      inputValue: target.tags.join(', '),
+      confirmButtonText: '保存',
+    });
+    const tags = value.split(',').map((t) => t.trim()).filter(Boolean);
+    await api.updateDistributeTargetTags(target.id, tags);
+    ElMessage.success('标签已更新');
+    await loadDistributeTargets();
+  } catch {
+    // 用户取消
   }
 }
 </script>
@@ -281,6 +341,52 @@ async function copyText(text: string): Promise<void> {
     <el-dialog v-model="distributeVisible" title="分发到其他服务器" width="720px">
       <div v-loading="distributeLoading">
         <template v-if="distributeToken">
+          <div v-if="distributeTargets.length > 0" class="dist-targets">
+            <div class="dist-targets-head">
+              <span>已分发服务器（{{ distributeTargets.length }}）</span>
+              <el-button link type="primary" size="small" :loading="distributeLoading" @click="loadDistributeTargets">刷新</el-button>
+            </div>
+            <el-table :data="distributeTargets" size="small" class="dist-table">
+              <el-table-column label="服务器 IP" width="140">
+                <template #default="{ row }">
+                  {{ row.ip }}
+                  <el-tag v-if="row.stale" type="warning" size="small" style="margin-left: 4px">失联</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="部署模式" width="130">
+                <template #default="{ row }">{{ reloadModeLabel(row.reloadMode, row.container) }}</template>
+              </el-table-column>
+              <el-table-column label="标签" width="120">
+                <template #default="{ row }">
+                  <span v-if="row.tags.length > 0" class="tag-cell" @click="canWrite() && editDistributeTargetTags(row)">
+                    <el-tag v-for="t in row.tags" :key="t" size="small" style="margin: 2px">{{ t }}</el-tag>
+                  </span>
+                  <el-button v-else-if="canWrite()" link type="primary" size="small" @click="editDistributeTargetTags(row)">+标签</el-button>
+                  <span v-else class="muted">—</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="最后同步" width="155">
+                <template #default="{ row }">
+                  <span v-if="row.lastSyncAt">{{ formatDate(row.lastSyncAt) }}</span>
+                  <span v-else class="muted">—</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="状态" width="80">
+                <template #default="{ row }">
+                  <el-tag v-if="row.lastSyncStatus" :type="syncStatusType(row.lastSyncStatus)" size="small">
+                    {{ syncStatusLabel(row.lastSyncStatus) }}
+                  </el-tag>
+                  <span v-else class="muted">—</span>
+                </template>
+              </el-table-column>
+              <el-table-column v-if="canWrite()" label="操作" width="60">
+                <template #default="{ row }">
+                  <el-button link type="danger" size="small" @click="deleteDistributeTarget(row.id, row.ip)">删除</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+
           <div class="dist-step">
             <span class="dist-step-num">1</span>
             <div class="dist-step-body">
@@ -317,7 +423,7 @@ async function copyText(text: string): Promise<void> {
           <el-collapse class="dist-help">
             <el-collapse-item title="证书装到哪里？同一台机器多张证书？怎么卸载？" name="detail">
               <ul class="help-list">
-                <li>证书默认装到 <code>/etc/nginx/certs/{{ cert.primaryDomain }}/</code>，加 <code>-s -- --dir 目录</code> 可改（<code>目录</code> 需含域名，如 <code>/etc/nginx/cret/{{ cert.primaryDomain }}</code>）</li>
+                <li>证书默认装到 <code>/etc/nginx/certs/{{ cert.primaryDomain }}/</code>，加 <code>-s -- --dir 目录</code> 可改（<code>目录</code> 需含域名，如 <code>/etc/nginx/certs/{{ cert.primaryDomain }}</code>）</li>
                 <li>Docker 场景记得让容器挂载证书目录（如 <code>./nginx-certs:/etc/nginx/certs</code>）</li>
                 <li>同一台机器装多张证书：对每张证书分别执行一次命令（定时任务只装一份，不会重复）</li>
                 <li>卸载：<code>rm -rf /etc/acme-distribute /usr/local/bin/acme-distribute-pull /etc/cron.d/acme-distribute</code></li>
@@ -460,6 +566,27 @@ async function copyText(text: string): Promise<void> {
   white-space: pre-wrap;
   word-break: normal;
   overflow-wrap: anywhere;
+}
+.dist-targets {
+  margin-bottom: 18px;
+}
+.dist-targets-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.dist-table {
+  border-radius: 6px;
+  overflow: hidden;
+}
+.tag-cell {
+  cursor: pointer;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
 }
 .dist-help {
   margin-top: 18px;

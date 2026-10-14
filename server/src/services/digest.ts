@@ -1,5 +1,6 @@
+import { eq } from 'drizzle-orm';
 import { db } from '../db/index.js';
-import { certificates } from '../db/schema.js';
+import { certificates, distributeTargets } from '../db/schema.js';
 import { daysLeftOf, type Certificate } from './certificates.js';
 import { type NotifyEvent, notifyQuietly } from './notifier.js';
 
@@ -49,8 +50,19 @@ export async function sendDailyDigest(): Promise<void> {
     }
   }
 
-  const issues = expired.length + errored.length + stalled.length;
-  const summary = `证书总数 ${certs.length}，正常 ${certs.length - issues}，巡检时间 ${new Date().toLocaleString('zh-CN')}`;
+  // 分发同步失败的目标
+  const syncFailedTargets = db
+    .select()
+    .from(distributeTargets)
+    .where(eq(distributeTargets.lastSyncStatus, 'error'))
+    .all();
+  const syncFailed: string[] = syncFailedTargets.map((t) => {
+    const when = t.lastSyncAt ? `，${new Date(t.lastSyncAt).toLocaleString('zh-CN')} 同步失败` : '';
+    return `${t.primaryDomain}（${t.ip}${when}）`;
+  });
+
+  const issues = expired.length + errored.length + stalled.length + syncFailed.length;
+  const summary = `证书总数 ${certs.length}，正常 ${certs.length - expired.length - errored.length - stalled.length}，分发同步失败 ${syncFailed.length}，巡检时间 ${new Date().toLocaleString('zh-CN')}`;
 
   const ev: NotifyEvent =
     issues > 0
@@ -62,6 +74,7 @@ export async function sendDailyDigest(): Promise<void> {
             section('❌ 已过期', expired),
             section('⚠️ 状态异常', errored),
             section(`⏰ ${SOON_DAYS} 天内到期且不会自动续期`, stalled),
+            section('🔄 分发同步失败', syncFailed),
           ]
             .filter((s): s is string => s !== null)
             .join('\n\n'),

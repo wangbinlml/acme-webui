@@ -12,6 +12,7 @@ export type NotifyEventName =
   | 'cert.issue.failed'
   | 'cert.renew.success'
   | 'cert.renew.failed'
+  | 'distribute.sync.failed'
   | 'system.daily-digest';
 
 export interface NotifyEvent {

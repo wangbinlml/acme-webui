@@ -11,6 +11,7 @@ import { caLabel, challengeLabel, daysLeftText, errMessage, formatDateOnly, keyT
 const router = useRouter();
 const certs = ref<CertificateView[]>([]);
 const loading = ref(true);
+const selectedCerts = ref<CertificateView[]>([]);
 let timer: number | undefined;
 
 async function refresh(): Promise<void> {
@@ -67,14 +68,34 @@ async function reissue(row: CertificateView): Promise<void> {
 }
 
 async function remove(row: CertificateView): Promise<void> {
-  await ElMessageBox.confirm(
-    `删除 ${row.primaryDomain} 将同时移除本地证书文件和 acme.sh 中的记录，该操作不可恢复。`,
-    '删除证书',
-    { type: 'error', confirmButtonText: '删除' },
-  );
   try {
-    await api.deleteCert(row.id);
-    ElMessage.success('已删除');
+    await ElMessageBox.confirm(
+      `删除 ${row.primaryDomain} 将同时移除本地证书文件和 acme.sh 中的记录，该操作不可恢复。\n\n如需同时向 CA 吊销证书（使其立即失效），请点击「吊销并删除」。`,
+      '删除证书',
+      {
+        type: 'error',
+        confirmButtonText: '吊销并删除',
+        cancelButtonText: '仅删除',
+        distinguishCancelAndClose: true,
+      },
+    );
+    await doDelete(row, true);
+  } catch (action: unknown) {
+    if (action === 'cancel') {
+      await doDelete(row, false);
+    }
+  }
+}
+
+async function doDelete(row: CertificateView, revoke: boolean): Promise<void> {
+  try {
+    const res = await api.deleteCert(row.id, revoke);
+    if (revoke) {
+      if (res.revoked) ElMessage.success(`已吊销并删除 ${row.primaryDomain}`);
+      else ElMessage.warning(`已删除 ${row.primaryDomain}，但吊销未成功${res.revokeError ? `（${res.revokeError}）` : ''}`);
+    } else {
+      ElMessage.success('已删除');
+    }
     await refresh();
   } catch (e) {
     ElMessage.error(errMessage(e));
@@ -84,6 +105,56 @@ async function remove(row: CertificateView): Promise<void> {
 function download(row: CertificateView, type: string): void {
   window.open(`/api/certificates/${row.id}/download?type=${type}`, '_blank');
 }
+
+function handleSelectionChange(rows: CertificateView[]): void {
+  selectedCerts.value = rows;
+}
+
+async function batchRenew(): Promise<void> {
+  const targets = selectedCerts.value.filter((c) => c.status !== 'issuing');
+  if (targets.length === 0) {
+    ElMessage.info('没有可续期的证书（已排除签发中的）');
+    return;
+  }
+  await ElMessageBox.confirm(`确定批量续期 ${targets.length} 个证书？`, '批量续期', { type: 'warning' });
+  let ok = 0;
+  let fail = 0;
+  for (const cert of targets) {
+    try {
+      await api.renewCert(cert.id);
+      ok++;
+    } catch {
+      fail++;
+    }
+  }
+  ElMessage.success(`已提交 ${ok} 个续期${fail > 0 ? `，${fail} 个失败` : ''}`);
+  await refresh();
+}
+
+async function batchDelete(): Promise<void> {
+  const targets = selectedCerts.value.filter((c) => c.status !== 'issuing');
+  if (targets.length === 0) {
+    ElMessage.info('没有可删除的证书（已排除签发中的）');
+    return;
+  }
+  await ElMessageBox.confirm(
+    `确定批量删除 ${targets.length} 个证书？此操作不可恢复。`,
+    '批量删除',
+    { type: 'error', confirmButtonText: '删除' },
+  );
+  let ok = 0;
+  let fail = 0;
+  for (const cert of targets) {
+    try {
+      await api.deleteCert(cert.id);
+      ok++;
+    } catch {
+      fail++;
+    }
+  }
+  ElMessage.success(`已删除 ${ok} 个${fail > 0 ? `，${fail} 个失败` : ''}`);
+  await refresh();
+}
 </script>
 
 <template>
@@ -92,10 +163,19 @@ function download(row: CertificateView, type: string): void {
       <template #header>
         <div class="card-header">
           <span>全部证书</span>
-          <el-button v-if="canWrite()" type="primary" icon="Plus" @click="router.push('/certificates/create')">创建证书</el-button>
+          <div v-if="canWrite()" class="header-actions">
+            <el-button type="primary" icon="Plus" @click="router.push('/certificates/create')">创建证书</el-button>
+            <el-button icon="Upload" @click="router.push('/certificates/import')">导入证书</el-button>
+          </div>
         </div>
       </template>
-      <el-table v-loading="loading" :data="certs">
+      <div v-if="selectedCerts.length > 0 && canWrite()" class="batch-bar">
+        <span>已选 {{ selectedCerts.length }} 项</span>
+        <el-button size="small" type="primary" @click="batchRenew">批量续期</el-button>
+        <el-button size="small" type="danger" @click="batchDelete">批量删除</el-button>
+      </div>
+      <el-table v-loading="loading" :data="certs" @selection-change="handleSelectionChange">
+        <el-table-column v-if="canWrite()" type="selection" width="40" />
         <el-table-column label="主域名" min-width="200">
           <template #default="{ row }">
             <el-link type="primary" :underline="false" @click="router.push(`/certificates/${row.id}`)">
@@ -175,6 +255,21 @@ function download(row: CertificateView, type: string): void {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+.header-actions {
+  display: flex;
+  gap: 8px;
+}
+.batch-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  background: #ecf5ff;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #409eff;
 }
 .san-count {
   margin-left: 8px;
