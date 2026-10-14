@@ -348,23 +348,36 @@ export async function distributeRoutes(app: FastifyInstance): Promise<void> {
     return { ok: true };
   });
 
-  /** 查询某域名的分发目标列表（需管理员会话认证） */
-  app.get('/distribute/targets', async (req, reply) => {
-    if (req.user!.role !== 'admin') return reply.code(403).send({ error: '需要管理员权限' });
+  /** 查询分发目标列表（domain 可选：不传时返回全部；登录用户均可读） */
+  app.get('/distribute/targets', async (req) => {
     const { domain } = (req.query ?? {}) as { domain?: string };
-    if (!domain) return reply.code(400).send({ error: '缺少 domain 参数' });
-    const rows = db
-      .select()
-      .from(distributeTargets)
-      .where(eq(distributeTargets.primaryDomain, domain.trim().toLowerCase()))
-      .orderBy(desc(distributeTargets.updatedAt))
-      .all();
+    const rows = domain
+      ? db.select().from(distributeTargets)
+          .where(eq(distributeTargets.primaryDomain, domain.trim().toLowerCase()))
+          .orderBy(desc(distributeTargets.updatedAt)).all()
+      : db.select().from(distributeTargets).orderBy(desc(distributeTargets.updatedAt)).all();
+
+    // 按域名查最新有效证书，补充状态与到期时间
+    const allCerts = db.select().from(certificates).orderBy(desc(certificates.id)).all();
+    const certMap = new Map<string, typeof allCerts[0]>();
+    for (const c of allCerts) {
+      if (!certMap.has(c.primaryDomain) || (c.certPath && !certMap.get(c.primaryDomain)!.certPath)) {
+        certMap.set(c.primaryDomain, c);
+      }
+    }
+
     const staleThreshold = Date.now() - 7 * 86_400_000;
-    const targets = rows.map((r) => ({
-      ...r,
-      tags: r.tags ? r.tags.split(',').map((t) => t.trim()).filter(Boolean) : [],
-      stale: r.lastSyncAt ? new Date(r.lastSyncAt).getTime() < staleThreshold : r.firstSeenAt ? new Date(r.firstSeenAt).getTime() < staleThreshold : true,
-    }));
+    const targets = rows.map((r) => {
+      const cert = certMap.get(r.primaryDomain);
+      return {
+        ...r,
+        tags: r.tags ? r.tags.split(',').map((t) => t.trim()).filter(Boolean) : [],
+        stale: r.lastSyncAt ? new Date(r.lastSyncAt).getTime() < staleThreshold : r.firstSeenAt ? new Date(r.firstSeenAt).getTime() < staleThreshold : true,
+        certStatus: cert?.status ?? null,
+        certExpiresAt: cert?.expiresAt ?? null,
+        certId: cert?.id ?? null,
+      };
+    });
     return { targets };
   });
 

@@ -144,6 +144,9 @@ export interface DistributeTarget {
   syncCount: number;
   tags: string[];
   stale: boolean;
+  certStatus?: string | null;
+  certExpiresAt?: string | null;
+  certId?: number | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -31,6 +31,12 @@ const router = createRouter({
       meta: { title: '证书详情' },
     },
     { path: '/dns', name: 'dns', component: () => import('../views/DnsProvidersView.vue'), meta: { title: 'DNS API' } },
+    {
+      path: '/distribute',
+      name: 'distribute',
+      component: () => import('../views/DistributeOverviewView.vue'),
+      meta: { title: '分发总览' },
+    },
     { path: '/logs', name: 'logs', component: () => import('../views/LogsView.vue'), meta: { title: '日志' } },
     {
       path: '/users',

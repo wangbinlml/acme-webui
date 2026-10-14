@@ -23,11 +23,12 @@ const menu = computed(() => {
   const items = [
     { index: '/', title: '仪表盘', icon: 'Odometer' },
     { index: '/certificates', title: '证书管理', icon: 'Lock' },
+    { index: '/distribute', title: '分发总览', icon: 'Share' },
     { index: '/dns', title: 'DNS API', icon: 'Connection' },
-    { index: '/logs', title: '日志', icon: 'Document' },
   ];
   if (canWrite()) items.push({ index: '/users', title: '用户管理', icon: 'User' });
   items.push({ index: '/settings', title: '设置', icon: 'Setting' });
+  items.push({ index: '/logs', title: '日志', icon: 'Document' });
   return items;
 });
 

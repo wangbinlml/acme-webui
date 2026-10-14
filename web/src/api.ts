@@ -135,6 +135,8 @@ export const api = {
   revokeDistributeToken: () => request<{ ok: boolean }>('/api/distribute/token', { method: 'DELETE' }),
   listDistributeTargets: (domain: string) =>
     request<{ targets: DistributeTarget[] }>(`/api/distribute/targets?domain=${encodeURIComponent(domain)}`),
+  listAllDistributeTargets: () =>
+    request<{ targets: DistributeTarget[] }>('/api/distribute/targets'),
   deleteDistributeTarget: (id: number) =>
     request<{ ok: boolean }>(`/api/distribute/targets/${id}`, { method: 'DELETE' }),
   updateDistributeTargetTags: (id: number, tags: string[]) =>
