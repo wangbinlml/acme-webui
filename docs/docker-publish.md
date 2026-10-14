@@ -46,8 +46,14 @@ git commit -m "chore: bump version to 0.2.2"
 git tag v0.2.2                # 版本号与上一步 package.json 一致
 git push origin main --tags   # 推送 tag 触发自动构建
 ```
+#### 3.1. 提交后删除远端 tag 重新打（会重新构建并覆盖 v0.2.1 镜像，Release 也会重建）
+```bash
+git push origin :refs/tags/v0.2.1   # 删远端 tag（Release 会保留）
+git tag -d v0.2.1 && git tag v0.2.1
+git push origin v0.2.1
+```
 
-### 3. 查看构建进度
+#### 3.2. 查看构建进度
 
 - GitHub 仓库 → Actions 页面，查看 `Publish Docker Image` 工作流状态
 - 构建约 10-15 分钟（amd64 + arm64 双架构）
