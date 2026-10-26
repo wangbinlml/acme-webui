@@ -41,7 +41,7 @@ function switchLocale(next: Locale): void {
   setLocale(next);
 }
 
-const title = computed(() => (typeof route.meta.title === 'string' ? route.meta.title : ''));
+const title = computed(() => (typeof route.meta.titleKey === 'string' ? t(route.meta.titleKey) : ''));
 
 const roleLabel = computed(() =>
   currentUser.value?.role === 'admin' ? t('header.admin') : currentUser.value ? t('header.viewer') : '',

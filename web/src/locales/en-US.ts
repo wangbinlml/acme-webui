@@ -27,6 +27,12 @@ export default {
     domain: 'Domain',
     ip: 'IP',
     needAdmin: 'Administrator permission required',
+    requestFailed: 'Request failed (HTTP {status})',
+  },
+  route: {
+    certCreate: 'Create Certificate',
+    certImport: 'Import Certificate',
+    certDetail: 'Certificate Details',
   },
   menu: {
     dashboard: 'Dashboard',
@@ -280,7 +286,7 @@ export default {
     probeDone: 'Probe finished: {status}',
     step1: 'Copy the command for your scenario',
     step1a: 'nginx / Caddy installed directly on the server',
-    step1b: 'nginx / Caddy running in Docker (replace <container name>)',
+    step1b: 'nginx / Caddy running in Docker (replace <nginx-container-name>)',
     step2: 'Run as root on the target server',
     step2Tip: 'Syncs immediately after install; then daily at 04:35 — reload only happens on content change',
     helpTitle: 'Where do certificates go? Multiple certs on one server? Uninstall?',
@@ -293,6 +299,7 @@ export default {
     tokenCreated: 'Token generated',
     reloadModeNginx: 'nginx',
     reloadModeDocker: 'Docker ({container})',
+    dockerContainerPlaceholder: 'nginx-container-name',
     syncStatus: {
       success: 'Updated',
       no_change: 'No change',

@@ -27,6 +27,12 @@ export default {
     domain: '域名',
     ip: 'IP',
     needAdmin: '需要管理员权限',
+    requestFailed: '请求失败（HTTP {status}）',
+  },
+  route: {
+    certCreate: '创建证书',
+    certImport: '导入证书',
+    certDetail: '证书详情',
   },
   menu: {
     dashboard: '仪表盘',
@@ -293,6 +299,7 @@ export default {
     tokenCreated: 'Token 已生成',
     reloadModeNginx: 'nginx',
     reloadModeDocker: 'Docker（{container}）',
+    dockerContainerPlaceholder: 'nginx容器名',
     syncStatus: {
       success: '已更新',
       no_change: '无变化',

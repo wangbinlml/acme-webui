@@ -151,7 +151,9 @@ const distributeCmd = computed(() => {
   const qs = new URLSearchParams({ domain });
   return `curl -fsSL -H 'Authorization: Bearer ${token}' '${window.location.origin}/api/distribute/install.sh?${qs.toString()}' | sudo bash`;
 });
-const distributeDockerCmd = computed(() => (distributeCmd.value ? `${distributeCmd.value} -s -- --docker <nginx容器名>` : ''));
+const distributeDockerCmd = computed(() =>
+  distributeCmd.value ? `${distributeCmd.value} -s -- --docker <${t('certDetail.dockerContainerPlaceholder')}>` : '',
+);
 
 async function loadDistributeTargets(): Promise<void> {
   if (!cert.value) return;

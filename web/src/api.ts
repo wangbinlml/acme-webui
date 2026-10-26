@@ -12,6 +12,7 @@ import type {
   SettingsData,
   UserView,
 } from './types';
+import i18n from './locales';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // 无 body 的 POST/DELETE 不能声明 json content-type，否则 Fastify 报空 JSON body 400
@@ -23,7 +24,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     if (res.status === 401 && !window.location.pathname.startsWith('/login')) {
       window.location.assign(`/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`);
     }
-    let message = `请求失败（HTTP ${res.status}）`;
+    let message = i18n.global.t('common.requestFailed', { status: res.status });
     try {
       const body = (await res.json()) as { error?: string };
       if (body?.error) message = body.error;

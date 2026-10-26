@@ -11,9 +11,14 @@ export function initialLocale(): Locale {
   return saved === 'en-US' || saved === 'zh-CN' ? saved : 'zh-CN';
 }
 
+function applyDocumentLang(locale: Locale): void {
+  document.documentElement.lang = locale;
+}
+
 export function setLocale(locale: Locale): void {
   localStorage.setItem(STORAGE_KEY, locale);
   i18n.global.locale.value = locale;
+  applyDocumentLang(locale);
 }
 
 const i18n = createI18n({
@@ -25,5 +30,7 @@ const i18n = createI18n({
     'en-US': enUS,
   },
 });
+
+applyDocumentLang(i18n.global.locale.value as Locale);
 
 export default i18n;
