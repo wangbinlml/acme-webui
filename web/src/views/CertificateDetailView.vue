@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { api } from '../api';
 import type { CertInfo, CertificateView, DistributeTarget } from '../types';
 import { canWrite } from '../auth';
 import StatusTag from '../components/StatusTag.vue';
 import LiveLog from '../components/LiveLog.vue';
-import { caLabel, challengeLabel, daysLeftText, errMessage, formatDate, formatDateOnly, keyTypeLabel } from '../utils';
+import { errMessage, formatDate, formatDateOnly, keyTypeLabel } from '../utils';
 
+const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const certId = Number(route.params.id);
@@ -51,10 +53,14 @@ onMounted(async () => {
 
 async function renew(): Promise<void> {
   if (!cert.value) return;
-  await ElMessageBox.confirm(`确定立即续期 ${cert.value.primaryDomain}？`, '续期证书', { type: 'warning' });
+  await ElMessageBox.confirm(
+    t('certDetail.renewConfirm', { domain: cert.value.primaryDomain }),
+    t('certDetail.renewTitle'),
+    { type: 'warning' },
+  );
   try {
     await api.renewCert(certId);
-    ElMessage.success('已提交续期');
+    ElMessage.success(t('certDetail.renewSubmitted'));
     await refresh();
   } catch (e) {
     ElMessage.error(errMessage(e));
@@ -64,13 +70,13 @@ async function renew(): Promise<void> {
 async function reissue(): Promise<void> {
   if (!cert.value) return;
   await ElMessageBox.confirm(
-    `将重新向 ${caLabel(cert.value.ca)} 申请证书，注意重复签发的速率限制。`,
-    '重新签发',
-    { type: 'warning', confirmButtonText: '重新签发' },
+    t('certDetail.reissueConfirm', { ca: t(`ca.${cert.value.ca}`) }),
+    t('certDetail.reissueTitle'),
+    { type: 'warning', confirmButtonText: t('certDetail.reissueBtn') },
   );
   try {
     await api.reissueCert(certId);
-    ElMessage.success('已提交重新签发');
+    ElMessage.success(t('certDetail.reissueSubmitted'));
     await refresh();
   } catch (e) {
     ElMessage.error(errMessage(e));
@@ -80,13 +86,13 @@ async function reissue(): Promise<void> {
 async function remove(): Promise<void> {
   if (!cert.value) return;
   await ElMessageBox.confirm(
-    `删除 ${cert.value.primaryDomain} 将同时移除本地证书文件和 acme.sh 中的记录，该操作不可恢复。`,
-    '删除证书',
-    { type: 'error', confirmButtonText: '删除' },
+    t('certDetail.deleteConfirm', { domain: cert.value.primaryDomain }),
+    t('certDetail.deleteTitle'),
+    { type: 'error', confirmButtonText: t('certDetail.deleteBtn') },
   );
   try {
     await api.deleteCert(certId);
-    ElMessage.success('已删除');
+    ElMessage.success(t('certDetail.deleted'));
     router.push('/certificates');
   } catch (e) {
     ElMessage.error(errMessage(e));
@@ -96,7 +102,7 @@ async function remove(): Promise<void> {
 async function saveAutoRenew(value: boolean): Promise<void> {
   try {
     await api.updateCert(certId, { autoRenew: value });
-    ElMessage.success(`已${value ? '开启' : '关闭'}自动续期`);
+    ElMessage.success(t(value ? 'certDetail.autoRenewOn' : 'certDetail.autoRenewOff'));
   } catch (e) {
     ElMessage.error(errMessage(e));
   }
@@ -105,7 +111,7 @@ async function saveAutoRenew(value: boolean): Promise<void> {
 async function saveThreshold(): Promise<void> {
   try {
     await api.updateCert(certId, { renewBeforeDays: renewBeforeDays.value });
-    ElMessage.success('续期阈值已更新');
+    ElMessage.success(t('certDetail.thresholdUpdated'));
   } catch (e) {
     ElMessage.error(errMessage(e));
   }
@@ -128,14 +134,12 @@ function syncStatusType(status: string | null): 'success' | 'info' | 'warning' |
   return 'warning';
 }
 function syncStatusLabel(status: string | null): string {
-  if (status === 'success') return '已更新';
-  if (status === 'no_change') return '无变化';
-  if (status === 'error') return '失败';
-  return '未知';
+  const key = status === 'success' || status === 'no_change' || status === 'error' ? status : 'unknown';
+  return t(`certDetail.syncStatus.${key}`);
 }
 function reloadModeLabel(mode: string | null, container: string | null): string {
-  if (mode === 'docker') return container ? `Docker（${container}）` : 'Docker';
-  if (mode === 'nginx') return 'nginx';
+  if (mode === 'docker') return container ? t('certDetail.reloadModeDocker', { container }) : 'Docker';
+  if (mode === 'nginx') return t('certDetail.reloadModeNginx');
   return '—';
 }
 
@@ -175,7 +179,7 @@ async function createDistributeToken(): Promise<void> {
   distributeLoading.value = true;
   try {
     distributeToken.value = (await api.createDistributeToken()).token;
-    ElMessage.success('Token 已生成');
+    ElMessage.success(t('certDetail.tokenCreated'));
   } catch (e) {
     ElMessage.error(errMessage(e));
   } finally {
@@ -186,21 +190,23 @@ async function createDistributeToken(): Promise<void> {
 async function copyText(text: string): Promise<void> {
   try {
     await navigator.clipboard.writeText(text);
-    ElMessage.success('已复制到剪贴板');
+    ElMessage.success(t('common.copied'));
   } catch {
-    ElMessage.error('复制失败，请手动选择复制');
+    ElMessage.error(t('common.copyFailed'));
   }
 }
 
 async function deleteDistributeTarget(id: number, ip: string): Promise<void> {
   try {
-    await ElMessageBox.confirm(`确定删除分发目标 ${ip}？`, '删除目标', { type: 'warning' });
+    await ElMessageBox.confirm(t('certDetail.deleteTargetConfirm', { ip }), t('certDetail.deleteTargetTitle'), {
+      type: 'warning',
+    });
   } catch {
     return;
   }
   try {
     await api.deleteDistributeTarget(id);
-    ElMessage.success('已删除');
+    ElMessage.success(t('certDetail.targetDeleted'));
     await loadDistributeTargets();
   } catch (e) {
     ElMessage.error(errMessage(e));
@@ -209,13 +215,13 @@ async function deleteDistributeTarget(id: number, ip: string): Promise<void> {
 
 async function editDistributeTargetTags(target: DistributeTarget): Promise<void> {
   try {
-    const { value } = await ElMessageBox.prompt('多个标签用逗号分隔', '编辑标签', {
+    const { value } = await ElMessageBox.prompt(t('certDetail.tagDialogTip'), t('certDetail.tagDialogTitle'), {
       inputValue: target.tags.join(', '),
-      confirmButtonText: '保存',
+      confirmButtonText: t('common.save'),
     });
-    const tags = value.split(',').map((t) => t.trim()).filter(Boolean);
+    const tags = value.split(',').map((s) => s.trim()).filter(Boolean);
     await api.updateDistributeTargetTags(target.id, tags);
-    ElMessage.success('标签已更新');
+    ElMessage.success(t('certDetail.tagsUpdated'));
     await loadDistributeTargets();
   } catch {
     // 用户取消
@@ -226,33 +232,33 @@ async function editDistributeTargetTags(target: DistributeTarget): Promise<void>
 <template>
   <div v-if="cert">
     <div class="detail-header">
-      <el-button text icon="ArrowLeft" @click="router.push('/certificates')">返回</el-button>
+      <el-button text icon="ArrowLeft" @click="router.push('/certificates')">{{ t('certDetail.back') }}</el-button>
       <span class="detail-domain">{{ cert.primaryDomain }}</span>
       <StatusTag :status="cert.displayStatus" />
       <div class="detail-actions">
-        <el-button v-if="canWrite()" type="primary" :disabled="isIssuing" @click="renew">立即续期</el-button>
-        <el-button v-if="canWrite()" type="warning" plain :disabled="isIssuing" @click="reissue">重新签发</el-button>
-        <el-button v-if="canWrite()" plain @click="openDistribute">分发到其他服务器</el-button>
+        <el-button v-if="canWrite()" type="primary" :disabled="isIssuing" @click="renew">{{ t('certDetail.renewNow') }}</el-button>
+        <el-button v-if="canWrite()" type="warning" plain :disabled="isIssuing" @click="reissue">{{ t('certDetail.reissue') }}</el-button>
+        <el-button v-if="canWrite()" plain @click="openDistribute">{{ t('certDetail.distribute') }}</el-button>
         <el-dropdown @command="download">
           <el-button>
-            下载 <el-icon><ArrowDown /></el-icon>
+            {{ t('certDetail.download') }} <el-icon><ArrowDown /></el-icon>
           </el-button>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item command="fullchain">证书（fullchain）</el-dropdown-item>
-              <el-dropdown-item command="cert">证书（仅域名）</el-dropdown-item>
-              <el-dropdown-item command="ca">CA 证书链</el-dropdown-item>
-              <el-dropdown-item command="key" divided>私钥</el-dropdown-item>
+              <el-dropdown-item command="fullchain">{{ t('certs.downloadFullchain') }}</el-dropdown-item>
+              <el-dropdown-item command="cert">{{ t('certs.downloadCert') }}</el-dropdown-item>
+              <el-dropdown-item command="ca">{{ t('certs.downloadCa') }}</el-dropdown-item>
+              <el-dropdown-item command="key" divided>{{ t('certs.downloadKey') }}</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
-        <el-button v-if="canWrite()" type="danger" plain :disabled="isIssuing" @click="remove">删除</el-button>
+        <el-button v-if="canWrite()" type="danger" plain :disabled="isIssuing" @click="remove">{{ t('certDetail.delete') }}</el-button>
       </div>
     </div>
 
     <el-alert
       v-if="cert.lastError"
-      :title="cert.status === 'error' ? '最近一次操作失败' : '历史错误信息'"
+      :title="cert.status === 'error' ? t('certDetail.lastOpFailed') : t('certDetail.historyError')"
       type="error"
       :closable="false"
       class="detail-alert"
@@ -263,42 +269,42 @@ async function editDistributeTargetTags(target: DistributeTarget): Promise<void>
     <el-row :gutter="16">
       <el-col :span="14">
         <el-card shadow="never" class="detail-card">
-          <template #header>证书信息</template>
+          <template #header>{{ t('certDetail.certInfo') }}</template>
           <el-descriptions :column="1" border>
-            <el-descriptions-item label="域名">{{ cert.domains.join('、') }}</el-descriptions-item>
-            <el-descriptions-item label="CA">{{ caLabel(cert.ca) }}</el-descriptions-item>
-            <el-descriptions-item label="密钥算法">{{ keyTypeLabel(cert.keyType) }}</el-descriptions-item>
-            <el-descriptions-item label="验证方式">{{ challengeLabel(cert.challengeType) }}</el-descriptions-item>
-            <el-descriptions-item v-if="cert.challengeType === 'dns01'" label="DNS Provider">
-              {{ providerName || '未知' }}
+            <el-descriptions-item :label="t('certDetail.domains')">{{ cert.domains.join('、') }}</el-descriptions-item>
+            <el-descriptions-item :label="t('certDetail.ca')">{{ t(`ca.${cert.ca}`) }}</el-descriptions-item>
+            <el-descriptions-item :label="t('certDetail.keyType')">{{ keyTypeLabel(cert.keyType) }}</el-descriptions-item>
+            <el-descriptions-item :label="t('certDetail.challenge')">{{ t(`challenge.${cert.challengeType}`) }}</el-descriptions-item>
+            <el-descriptions-item v-if="cert.challengeType === 'dns01'" :label="t('certDetail.dnsProvider')">
+              {{ providerName || t('certDetail.unknown') }}
             </el-descriptions-item>
-            <el-descriptions-item label="签发时间">{{ formatDate(cert.issuedAt) }}</el-descriptions-item>
-            <el-descriptions-item label="到期时间">
+            <el-descriptions-item :label="t('certDetail.issuedAt')">{{ formatDate(cert.issuedAt) }}</el-descriptions-item>
+            <el-descriptions-item :label="t('certDetail.expiresAt')">
               {{ formatDate(cert.expiresAt) }}
-              <span class="muted">（剩余 {{ daysLeftText(cert.daysLeft) }}）</span>
+              <span class="muted">{{ t('certDetail.leftDays', { text: cert.daysLeft === null ? '-' : cert.daysLeft < 0 ? t('days.expiredAgo', { n: -cert.daysLeft }) : t('days.left', { n: cert.daysLeft }) }) }}</span>
             </el-descriptions-item>
-            <el-descriptions-item label="证书路径">
+            <el-descriptions-item :label="t('certDetail.certPath')">
               <div class="path-block">
                 <span class="mono">{{ cert.hostCertPath ?? cert.certPath ?? '-' }}</span>
                 <div v-if="cert.hostCertPath && cert.hostCertPath !== cert.certPath" class="mono path-sub">
-                  容器内：{{ cert.certPath }}
+                  {{ t('certDetail.inContainer', { path: cert.certPath }) }}
                 </div>
               </div>
             </el-descriptions-item>
-            <el-descriptions-item label="私钥路径">
+            <el-descriptions-item :label="t('certDetail.keyPath')">
               <div class="path-block">
                 <span class="mono">{{ cert.hostKeyPath ?? cert.keyPath ?? '-' }}</span>
                 <div v-if="cert.hostKeyPath && cert.hostKeyPath !== cert.keyPath" class="mono path-sub">
-                  容器内：{{ cert.keyPath }}
+                  {{ t('certDetail.inContainer', { path: cert.keyPath }) }}
                 </div>
               </div>
             </el-descriptions-item>
-            <el-descriptions-item label="创建时间">{{ formatDate(cert.createdAt) }}</el-descriptions-item>
+            <el-descriptions-item :label="t('certDetail.createdAt')">{{ formatDate(cert.createdAt) }}</el-descriptions-item>
           </el-descriptions>
         </el-card>
 
         <el-card shadow="never" class="detail-card">
-          <template #header>证书文件内容</template>
+          <template #header>{{ t('certDetail.certContent') }}</template>
           <el-descriptions v-if="certInfo" :column="1" border>
             <el-descriptions-item label="Subject">
               <span class="mono">{{ certInfo.subject }}</span>
@@ -307,71 +313,71 @@ async function editDistributeTargetTags(target: DistributeTarget): Promise<void>
               <span class="mono">{{ certInfo.issuer }}</span>
             </el-descriptions-item>
             <el-descriptions-item label="SAN">{{ certInfo.sans.join('、') || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="SHA-256 指纹">
+            <el-descriptions-item :label="t('certDetail.fingerprint')">
               <span class="mono fingerprint">{{ certInfo.fingerprint256 }}</span>
             </el-descriptions-item>
           </el-descriptions>
-          <el-empty v-else description="尚未签发成功，暂无证书文件" :image-size="60" />
+          <el-empty v-else :description="t('certDetail.noCertYet')" :image-size="60" />
         </el-card>
       </el-col>
 
       <el-col :span="10">
         <el-card shadow="never" class="detail-card">
-          <template #header>续期设置</template>
+          <template #header>{{ t('certDetail.renewSettings') }}</template>
           <el-form label-width="90px" label-position="left">
-            <el-form-item label="自动续期">
+            <el-form-item :label="t('certDetail.autoRenew')">
               <el-switch :model-value="cert.autoRenew" :disabled="isIssuing || !canWrite()" @change="(v: any) => saveAutoRenew(Boolean(v))" />
-              <span class="muted small">每天 03:00 检查（服务器时区）</span>
+              <span class="muted small">{{ t('certDetail.autoRenewTip') }}</span>
             </el-form-item>
-            <el-form-item label="续期阈值">
+            <el-form-item :label="t('certDetail.renewThreshold')">
               <el-input-number v-model="renewBeforeDays" :min="1" :max="89" :disabled="!canWrite()" />
-              <span class="muted small">天前触发</span>
-              <el-button v-if="canWrite()" size="small" style="margin-left: 8px" @click="saveThreshold">保存</el-button>
+              <span class="muted small">{{ t('certDetail.daysBefore') }}</span>
+              <el-button v-if="canWrite()" size="small" style="margin-left: 8px" @click="saveThreshold">{{ t('common.save') }}</el-button>
             </el-form-item>
           </el-form>
         </el-card>
 
         <el-card shadow="never" class="detail-card">
-          <template #header>实时日志（本证书）</template>
+          <template #header>{{ t('certDetail.liveLog') }}</template>
           <LiveLog :certificate-id="certId" height="420px" />
         </el-card>
       </el-col>
     </el-row>
 
-    <el-dialog v-model="distributeVisible" title="分发到其他服务器" width="720px">
+    <el-dialog v-model="distributeVisible" :title="t('certDetail.distTitle')" width="720px">
       <div v-loading="distributeLoading">
         <template v-if="distributeToken">
           <div v-if="distributeTargets.length > 0" class="dist-targets">
             <div class="dist-targets-head">
-              <span>已分发服务器（{{ distributeTargets.length }}）</span>
-              <el-button link type="primary" size="small" :loading="distributeLoading" @click="loadDistributeTargets">刷新</el-button>
+              <span>{{ t('certDetail.distTargets', { n: distributeTargets.length }) }}</span>
+              <el-button link type="primary" size="small" :loading="distributeLoading" @click="loadDistributeTargets">{{ t('common.refresh') }}</el-button>
             </div>
             <el-table :data="distributeTargets" size="small" class="dist-table">
-              <el-table-column label="服务器 IP" width="140">
+              <el-table-column :label="t('certDetail.colIp')" width="140">
                 <template #default="{ row }">
                   {{ row.ip }}
-                  <el-tag v-if="row.stale" type="warning" size="small" style="margin-left: 4px">失联</el-tag>
+                  <el-tag v-if="row.stale" type="warning" size="small" style="margin-left: 4px">{{ t('certDetail.stale') }}</el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="部署模式" width="130">
+              <el-table-column :label="t('certDetail.colMode')" width="130">
                 <template #default="{ row }">{{ reloadModeLabel(row.reloadMode, row.container) }}</template>
               </el-table-column>
-              <el-table-column label="标签" width="120">
+              <el-table-column :label="t('certDetail.colTags')" width="120">
                 <template #default="{ row }">
                   <span v-if="row.tags.length > 0" class="tag-cell" @click="canWrite() && editDistributeTargetTags(row)">
-                    <el-tag v-for="t in row.tags" :key="t" size="small" style="margin: 2px">{{ t }}</el-tag>
+                    <el-tag v-for="tag in row.tags" :key="tag" size="small" style="margin: 2px">{{ tag }}</el-tag>
                   </span>
-                  <el-button v-else-if="canWrite()" link type="primary" size="small" @click="editDistributeTargetTags(row)">+标签</el-button>
+                  <el-button v-else-if="canWrite()" link type="primary" size="small" @click="editDistributeTargetTags(row)">{{ t('certDetail.addTag') }}</el-button>
                   <span v-else class="muted">—</span>
                 </template>
               </el-table-column>
-              <el-table-column label="最后同步" width="155">
+              <el-table-column :label="t('certDetail.colLastSync')" width="155">
                 <template #default="{ row }">
                   <span v-if="row.lastSyncAt">{{ formatDate(row.lastSyncAt) }}</span>
                   <span v-else class="muted">—</span>
                 </template>
               </el-table-column>
-              <el-table-column label="状态" width="80">
+              <el-table-column :label="t('common.status')" width="80">
                 <template #default="{ row }">
                   <el-tag v-if="row.lastSyncStatus" :type="syncStatusType(row.lastSyncStatus)" size="small">
                     {{ syncStatusLabel(row.lastSyncStatus) }}
@@ -379,9 +385,9 @@ async function editDistributeTargetTags(target: DistributeTarget): Promise<void>
                   <span v-else class="muted">—</span>
                 </template>
               </el-table-column>
-              <el-table-column v-if="canWrite()" label="操作" width="60">
+              <el-table-column v-if="canWrite()" :label="t('common.actions')" width="60">
                 <template #default="{ row }">
-                  <el-button link type="danger" size="small" @click="deleteDistributeTarget(row.id, row.ip)">删除</el-button>
+                  <el-button link type="danger" size="small" @click="deleteDistributeTarget(row.id, row.ip)">{{ t('certDetail.delete') }}</el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -390,21 +396,21 @@ async function editDistributeTargetTags(target: DistributeTarget): Promise<void>
           <div class="dist-step">
             <span class="dist-step-num">1</span>
             <div class="dist-step-body">
-              <div class="dist-step-title">按场景复制命令</div>
+              <div class="dist-step-title">{{ t('certDetail.step1') }}</div>
               <div class="dist-scenario">
                 <div class="dist-scenario-head">
-                  <span>nginx / Caddy 直接安装在服务器上</span>
+                  <span>{{ t('certDetail.step1a') }}</span>
                   <el-button link type="primary" size="small" @click="copyText(distributeCmd)">
-                    <el-icon><DocumentCopy /></el-icon><span>复制</span>
+                    <el-icon><DocumentCopy /></el-icon><span>{{ t('common.copy') }}</span>
                   </el-button>
                 </div>
                 <div class="dist-cmd"><code>{{ distributeCmd }}</code></div>
               </div>
               <div class="dist-scenario">
                 <div class="dist-scenario-head">
-                  <span>nginx / Caddy 跑在 Docker 容器里（需替换 &lt;nginx容器名&gt;）</span>
+                  <span>{{ t('certDetail.step1b') }}</span>
                   <el-button link type="primary" size="small" @click="copyText(distributeDockerCmd)">
-                    <el-icon><DocumentCopy /></el-icon><span>复制</span>
+                    <el-icon><DocumentCopy /></el-icon><span>{{ t('common.copy') }}</span>
                   </el-button>
                 </div>
                 <div class="dist-cmd"><code>{{ distributeDockerCmd }}</code></div>
@@ -415,24 +421,24 @@ async function editDistributeTargetTags(target: DistributeTarget): Promise<void>
           <div class="dist-step">
             <span class="dist-step-num">2</span>
             <div class="dist-step-body">
-              <div class="dist-step-title">到目标服务器上以 root 执行</div>
-              <div class="dist-note">执行后立即同步一次；以后每天 04:35 自动检查，证书有变化才会 reload</div>
+              <div class="dist-step-title">{{ t('certDetail.step2') }}</div>
+              <div class="dist-note">{{ t('certDetail.step2Tip') }}</div>
             </div>
           </div>
 
           <el-collapse class="dist-help">
-            <el-collapse-item title="证书装到哪里？同一台机器多张证书？怎么卸载？" name="detail">
+            <el-collapse-item :title="t('certDetail.helpTitle')" name="detail">
               <ul class="help-list">
-                <li>证书默认装到 <code>/etc/nginx/certs/{{ cert.primaryDomain }}/</code>，加 <code>-s -- --dir 目录</code> 可改（<code>目录</code> 需含域名，如 <code>/etc/nginx/certs/{{ cert.primaryDomain }}</code>）</li>
-                <li>Docker 场景记得让容器挂载证书目录（如 <code>./nginx-certs:/etc/nginx/certs</code>）</li>
-                <li>同一台机器装多张证书：对每张证书分别执行一次命令（定时任务只装一份，不会重复）</li>
-                <li>卸载：<code>rm -rf /etc/acme-distribute /usr/local/bin/acme-distribute-pull /etc/cron.d/acme-distribute</code></li>
+                <li>{{ t('certDetail.help1', { domain: cert.primaryDomain }) }}</li>
+                <li>{{ t('certDetail.help2') }}</li>
+                <li>{{ t('certDetail.help3') }}</li>
+                <li>{{ t('certDetail.help4') }}</li>
               </ul>
             </el-collapse-item>
           </el-collapse>
         </template>
-        <el-empty v-else-if="!distributeLoading" description="尚未创建分发 Token（在「设置 → 多主机分发」创建）" :image-size="60">
-          <el-button type="primary" @click="createDistributeToken">立即创建</el-button>
+        <el-empty v-else-if="!distributeLoading" :description="t('certDetail.noToken')" :image-size="60">
+          <el-button type="primary" @click="createDistributeToken">{{ t('certDetail.createToken') }}</el-button>
         </el-empty>
       </div>
     </el-dialog>
@@ -471,7 +477,7 @@ async function editDistributeTargetTags(target: DistributeTarget): Promise<void>
   margin-bottom: 16px;
 }
 .muted {
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 .small {
   font-size: 12px;
@@ -488,24 +494,24 @@ async function editDistributeTargetTags(target: DistributeTarget): Promise<void>
   gap: 2px;
 }
 .path-sub {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 11px;
 }
 .help-list {
   margin: 0;
   padding-left: 16px;
   font-size: 12px;
-  color: #606266;
+  color: var(--el-text-color-regular);
   line-height: 1.8;
 }
 .help-list code {
   font-family: ui-monospace, Menlo, Consolas, monospace;
-  background: #f4f4f5;
+  background: var(--el-fill-color);
   padding: 1px 4px;
   border-radius: 3px;
 }
 .fingerprint {
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 .dist-step {
   display: flex;
@@ -535,11 +541,11 @@ async function editDistributeTargetTags(target: DistributeTarget): Promise<void>
 }
 .dist-note {
   font-size: 13px;
-  color: #606266;
+  color: var(--el-text-color-regular);
   line-height: 1.6;
 }
 .dist-scenario {
-  border: 1px solid #e4e7ed;
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;
   overflow: hidden;
 }
@@ -552,9 +558,9 @@ async function editDistributeTargetTags(target: DistributeTarget): Promise<void>
   justify-content: space-between;
   gap: 8px;
   padding: 6px 12px;
-  background: #f5f7fa;
+  background: var(--el-fill-color-light);
   font-size: 13px;
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 .dist-cmd {
   padding: 8px 12px;
@@ -590,11 +596,11 @@ async function editDistributeTargetTags(target: DistributeTarget): Promise<void>
 }
 .dist-help {
   margin-top: 18px;
-  border-top: 1px solid #ebeef5;
+  border-top: 1px solid var(--el-border-color-lighter);
 }
 .dist-help :deep(.el-collapse-item__header) {
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   height: 36px;
   line-height: 36px;
   border-bottom: none;

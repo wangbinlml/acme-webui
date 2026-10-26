@@ -8,6 +8,7 @@ import { enqueue } from '../services/queue.js';
 import { issueFlow, renewFlow, removeFlow } from '../services/cert-ops.js';
 import { filesFor, isValidDomain, parseCertPem, readCertInfo, toView } from '../services/certificates.js';
 import { logEvent } from '../services/logger.js';
+import { logAudit } from '../services/audit.js';
 import { getAccountEmail } from '../services/settings.js';
 
 const CAS = ['letsencrypt', 'zerossl'] as const;
@@ -101,6 +102,7 @@ export async function certificateRoutes(app: FastifyInstance): Promise<void> {
       .all()[0];
 
     logEvent('info', `创建证书 ${primaryDomain}，开始签发`, row.id);
+    logAudit(req, 'cert.create', `创建证书 ${primaryDomain}（${ca} / ${keyType} / ${challengeType}）`);
     void enqueue(() => issueFlow(row.id, { force: false }));
     return reply.code(201).send({ certificate: toView(row) });
   });
@@ -188,6 +190,7 @@ export async function certificateRoutes(app: FastifyInstance): Promise<void> {
       .run();
 
     logEvent('info', `导入证书 ${primaryDomain}（CA: ${ca}，到期 ${info.validTo ?? '未知'}）`, row.id);
+    logAudit(req, 'cert.import', `导入证书 ${primaryDomain}（CA: ${ca}）`);
     return reply.code(201).send({ certificate: toView(getCertOrNull(row.id) ?? row) });
   });
 
@@ -200,6 +203,7 @@ export async function certificateRoutes(app: FastifyInstance): Promise<void> {
       .set({ status: 'issuing', updatedAt: new Date().toISOString() })
       .where(eq(certificates.id, cert.id))
       .run();
+    logAudit(req, 'cert.renew', `提交续期 ${cert.primaryDomain}`);
     void enqueue(() => renewFlow(cert.id));
     return { certificate: toView(getCertOrNull(cert.id) ?? cert) };
   });
@@ -213,6 +217,7 @@ export async function certificateRoutes(app: FastifyInstance): Promise<void> {
       .set({ status: 'issuing', updatedAt: new Date().toISOString() })
       .where(eq(certificates.id, cert.id))
       .run();
+    logAudit(req, 'cert.reissue', `提交重新签发 ${cert.primaryDomain}`);
     void enqueue(() => issueFlow(cert.id, { force: true }));
     return { certificate: toView(getCertOrNull(cert.id) ?? cert) };
   });
@@ -232,6 +237,7 @@ export async function certificateRoutes(app: FastifyInstance): Promise<void> {
       patch.renewBeforeDays = days;
     }
     db.update(certificates).set(patch).where(eq(certificates.id, cert.id)).run();
+    logAudit(req, 'cert.update', `更新配置 ${cert.primaryDomain}（${Object.keys(patch).filter((k) => k !== 'updatedAt').join('、') || '无变更'}）`);
     return { certificate: toView(getCertOrNull(cert.id) ?? cert) };
   });
 
@@ -242,6 +248,7 @@ export async function certificateRoutes(app: FastifyInstance): Promise<void> {
     if (cert.status === 'issuing') return reply.code(409).send({ error: '该证书正在执行任务，无法删除' });
     const revoke = (req.query as { revoke?: string })?.revoke === 'true';
     const result = await removeFlow(cert, { revoke });
+    logAudit(req, 'cert.delete', `删除证书 ${cert.primaryDomain}${revoke ? (result.revoked ? '（已向 CA 吊销）' : '（吊销未成功）') : ''}`);
     return { ok: true, revoked: result.revoked, revokeError: result.revokeError };
   });
 

@@ -4,6 +4,7 @@ import { db } from '../db/index.js';
 import { certificates, dnsProviders } from '../db/schema.js';
 import { PROVIDERS, getProviderDef, testDnsConnection } from '../services/dns-providers.js';
 import { logEvent } from '../services/logger.js';
+import { logAudit } from '../services/audit.js';
 
 /** 返回给前端的凭据掩码；PUT 时收到掩码表示“保持原值” */
 const MASK = '••••••••';
@@ -96,6 +97,7 @@ export async function dnsProviderRoutes(app: FastifyInstance): Promise<void> {
       .returning()
       .all()[0];
     logEvent('info', `已添加 DNS Provider「${name}」（${getProviderDef(type)?.label ?? type}）`);
+    logAudit(req, 'dns.create', `添加 DNS Provider「${name}」（${getProviderDef(type)?.label ?? type}）`);
     return reply.code(201).send({ provider: toView(row as ProviderRow) });
   });
 
@@ -121,6 +123,7 @@ export async function dnsProviderRoutes(app: FastifyInstance): Promise<void> {
     db.update(dnsProviders).set(patch).where(eq(dnsProviders.id, row.id)).run();
     const updated = db.select().from(dnsProviders).where(eq(dnsProviders.id, row.id)).all()[0];
     logEvent('info', `已更新 DNS Provider「${updated.name}」`);
+    logAudit(req, 'dns.update', `更新 DNS Provider「${updated.name}」`);
     return { provider: toView(updated as ProviderRow) };
   });
 
@@ -134,6 +137,7 @@ export async function dnsProviderRoutes(app: FastifyInstance): Promise<void> {
     }
     db.delete(dnsProviders).where(eq(dnsProviders.id, row.id)).run();
     logEvent('info', `已删除 DNS Provider「${row.name}」`);
+    logAudit(req, 'dns.delete', `删除 DNS Provider「${row.name}」`);
     return { ok: true };
   });
 

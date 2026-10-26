@@ -144,9 +144,22 @@ export interface DistributeTarget {
   syncCount: number;
   tags: string[];
   stale: boolean;
+  hostname: string | null;
+  lastProbeAt: string | null;
+  lastProbeStatus: string | null;
+  lastProbeMessage: string | null;
   certStatus?: string | null;
   certExpiresAt?: string | null;
   certId?: number | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AuditLog {
+  id: number;
+  username: string;
+  action: string;
+  detail: string | null;
+  ip: string | null;
+  createdAt: string;
 }

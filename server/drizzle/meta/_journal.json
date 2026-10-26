@@ -50,6 +50,20 @@
       "when": 1788600000000,
       "tag": "0006_distribute_target_tags",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1788700000000,
+      "tag": "0007_target_hostname_probe",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1788800000000,
+      "tag": "0008_audit_logs",
+      "breakpoints": true
     }
   ]
 }

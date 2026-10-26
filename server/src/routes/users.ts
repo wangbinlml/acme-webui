@@ -10,6 +10,7 @@ import {
   updateUser,
 } from '../services/auth.js';
 import { logEvent } from '../services/logger.js';
+import { logAudit } from '../services/audit.js';
 
 /** 用户管理（仅 admin，认证钩子里已做角色检查） */
 export async function userRoutes(app: FastifyInstance): Promise<void> {
@@ -33,6 +34,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     }
     const user = createUser(username, password, role);
     logEvent('info', `用户 ${username} 已创建（${role}，操作者 ${req.user!.username}）`);
+    logAudit(req, 'user.create', `创建用户 ${username}（角色 ${role}）`);
     return { user: { id: user.id, username: user.username, role: user.role } };
   });
 
@@ -65,6 +67,11 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       'info',
       `用户 ${target.username} 已更新（${role !== undefined ? `角色→${role} ` : ''}${password !== undefined ? '密码已重置' : ''}，操作者 ${req.user!.username}）`,
     );
+    logAudit(
+      req,
+      'user.update',
+      `更新用户 ${target.username}（${role !== undefined ? `角色→${role} ` : ''}${password !== undefined ? '密码已重置' : ''}）`,
+    );
     return { ok: true };
   });
 
@@ -78,6 +85,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     }
     deleteUser(id);
     logEvent('info', `用户 ${target.username} 已删除（操作者 ${req.user!.username}）`);
+    logAudit(req, 'user.delete', `删除用户 ${target.username}`);
     return { ok: true };
   });
 }

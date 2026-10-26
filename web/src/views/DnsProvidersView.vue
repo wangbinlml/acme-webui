@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { api } from '../api';
 import type { DnsProviderView, ProviderTypeDef } from '../types';
 import { canWrite } from '../auth';
 import { errMessage, formatDate } from '../utils';
 
+const { t } = useI18n();
 const providers = ref<DnsProviderView[]>([]);
 const types = ref<ProviderTypeDef[]>([]);
 const loading = ref(true);
@@ -68,17 +70,17 @@ function openEdit(row: DnsProviderView): void {
 
 async function submit(): Promise<void> {
   if (!form.name.trim()) {
-    ElMessage.error('请填写名称');
+    ElMessage.error(t('dns.nameRequired'));
     return;
   }
   submitting.value = true;
   try {
     if (editingId.value) {
       await api.updateProvider(editingId.value, { name: form.name, credentials: form.credentials });
-      ElMessage.success('已保存');
+      ElMessage.success(t('dns.saved'));
     } else {
       await api.createProvider({ name: form.name, type: form.type, credentials: form.credentials });
-      ElMessage.success('已添加');
+      ElMessage.success(t('dns.added'));
     }
     dialogVisible.value = false;
     await refresh();
@@ -111,10 +113,10 @@ async function testRow(row: DnsProviderView): Promise<void> {
 }
 
 async function remove(row: DnsProviderView): Promise<void> {
-  await ElMessageBox.confirm(`删除 DNS Provider「${row.name}」？`, '删除', { type: 'warning' });
+  await ElMessageBox.confirm(t('dns.deleteConfirm', { name: row.name }), t('dns.delete'), { type: 'warning' });
   try {
     await api.deleteProvider(row.id);
-    ElMessage.success('已删除');
+    ElMessage.success(t('dns.deleted'));
     await refresh();
   } catch (e) {
     ElMessage.error(errMessage(e));
@@ -125,7 +127,7 @@ function credentialEntries(row: DnsProviderView): string[] {
   const fields = types.value.find((t) => t.id === row.type)?.fields ?? [];
   return Object.entries(row.credentials).map(([k, v]) => {
     const label = fields.find((f) => f.key === k)?.label ?? k;
-    return `${label}: ${v || '（未设置）'}`;
+    return `${label}: ${v || t('dns.notSet')}`;
   });
 }
 </script>
@@ -134,26 +136,26 @@ function credentialEntries(row: DnsProviderView): string[] {
   <el-card shadow="never">
     <template #header>
       <div class="card-header">
-        <span>DNS Providers</span>
-        <el-button v-if="canWrite()" type="primary" icon="Plus" @click="openCreate">添加</el-button>
+        <span>{{ t('dns.title') }}</span>
+        <el-button v-if="canWrite()" type="primary" icon="Plus" @click="openCreate">{{ t('dns.add') }}</el-button>
       </div>
     </template>
     <el-table v-loading="loading" :data="providers">
-      <el-table-column label="名称" min-width="140">
+      <el-table-column :label="t('dns.colName')" min-width="140">
         <template #default="{ row }">{{ row.name }}</template>
       </el-table-column>
-      <el-table-column label="类型" width="140">
+      <el-table-column :label="t('dns.colType')" width="140">
         <template #default="{ row }">{{ row.typeName }}</template>
       </el-table-column>
-      <el-table-column label="凭据" min-width="260">
+      <el-table-column :label="t('dns.colCredentials')" min-width="260">
         <template #default="{ row }">
           <div v-for="line in credentialEntries(row)" :key="line" class="cred-line">{{ line }}</div>
         </template>
       </el-table-column>
-      <el-table-column label="添加时间" width="160">
+      <el-table-column :label="t('dns.colCreatedAt')" width="160">
         <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="200" fixed="right">
+      <el-table-column :label="t('dns.colActions')" width="200" fixed="right">
         <template #default="{ row }">
           <el-button
             v-if="canWrite()"
@@ -163,40 +165,40 @@ function credentialEntries(row: DnsProviderView): string[] {
             :disabled="!row.testable"
             @click="testRow(row)"
           >
-            测试连接
+            {{ t('dns.testConn') }}
           </el-button>
-          <el-button v-if="canWrite()" link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
-          <el-button v-if="canWrite()" link type="danger" size="small" @click="remove(row)">删除</el-button>
+          <el-button v-if="canWrite()" link type="primary" size="small" @click="openEdit(row)">{{ t('dns.edit') }}</el-button>
+          <el-button v-if="canWrite()" link type="danger" size="small" @click="remove(row)">{{ t('dns.delete') }}</el-button>
         </template>
       </el-table-column>
       <template #empty>
-        <el-empty description="还没有 DNS Provider">
-          <el-button v-if="canWrite()" type="primary" @click="openCreate">添加</el-button>
+        <el-empty :description="t('dns.empty')">
+          <el-button v-if="canWrite()" type="primary" @click="openCreate">{{ t('dns.add') }}</el-button>
         </el-empty>
       </template>
     </el-table>
 
     <el-dialog
       v-model="dialogVisible"
-      :title="editingId ? '编辑 DNS Provider' : '添加 DNS Provider'"
+      :title="editingId ? t('dns.editTitle') : t('dns.addTitle')"
       width="520px"
     >
       <el-form label-width="110px" label-position="left">
-        <el-form-item label="名称" required>
-          <el-input v-model="form.name" placeholder="例如：CF 主账号" />
+        <el-form-item :label="t('dns.formName')" required>
+          <el-input v-model="form.name" :placeholder="t('dns.formNamePlaceholder')" />
         </el-form-item>
-        <el-form-item label="Provider" required>
+        <el-form-item :label="t('dns.formType')" required>
           <el-select v-model="form.type" :disabled="!!editingId" style="width: 100%">
             <el-option v-for="t in types" :key="t.id" :label="t.label" :value="t.id" />
           </el-select>
-          <div v-if="editingId" class="form-tip">不支持修改类型，如需更改请删除后重新添加</div>
+          <div v-if="editingId" class="form-tip">{{ t('dns.typeFixedTip') }}</div>
         </el-form-item>
         <el-form-item v-if="activeType?.helpUrl" label=" ">
           <el-alert type="info" :closable="false" class="help-alert">
             <div class="help-line">
               <span>{{ activeType.helpText }}</span>
               <el-link type="primary" :href="activeType.helpUrl" target="_blank" class="help-link">
-                打开控制台获取 <el-icon><TopRight /></el-icon>
+                {{ t('dns.openConsole') }} <el-icon><TopRight /></el-icon>
               </el-link>
             </div>
           </el-alert>
@@ -210,14 +212,14 @@ function credentialEntries(row: DnsProviderView): string[] {
           <el-input
             v-model="form.credentials[field.key]"
             :show-password="field.secret"
-            :placeholder="field.placeholder ?? (field.required ? '必填' : '可选')"
+            :placeholder="field.placeholder ?? (field.required ? t('dns.fieldRequired') : t('dns.fieldOptional'))"
           />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button v-if="activeType?.testable" :loading="testing" @click="testDialog">测试连接</el-button>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="submit">保存</el-button>
+        <el-button v-if="activeType?.testable" :loading="testing" @click="testDialog">{{ t('dns.testBtn') }}</el-button>
+        <el-button @click="dialogVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="submitting" @click="submit">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
   </el-card>
@@ -237,7 +239,7 @@ function credentialEntries(row: DnsProviderView): string[] {
 }
 .form-tip {
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 .help-alert {
   width: 100%;

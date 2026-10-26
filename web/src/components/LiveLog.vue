@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import type { LogLine } from '../types';
 import { formatTimeOnly } from '../utils';
+
+const { t } = useI18n();
 
 const props = withDefaults(defineProps<{ certificateId?: number | null; height?: string }>(), {
   certificateId: null,
@@ -50,11 +53,11 @@ onUnmounted(() => {
   <div class="live-log">
     <div class="live-log-toolbar">
       <el-tag :type="connected ? 'success' : 'info'" size="small">
-        {{ connected ? '已连接' : '连接中…' }}
+        {{ connected ? t('logs.connected') : t('logs.connecting') }}
       </el-tag>
-      <el-button size="small" :disabled="paused" @click="paused = true">暂停</el-button>
-      <el-button size="small" :disabled="!paused" @click="paused = false">继续</el-button>
-      <el-button size="small" @click="lines = []">清屏</el-button>
+      <el-button size="small" :disabled="paused" @click="paused = true">{{ t('logs.pause') }}</el-button>
+      <el-button size="small" :disabled="!paused" @click="paused = false">{{ t('logs.resume') }}</el-button>
+      <el-button size="small" @click="lines = []">{{ t('logs.clear') }}</el-button>
     </div>
     <div ref="boxRef" class="live-log-box" :style="{ height }">
       <div v-for="(line, i) in lines" :key="i" class="log-line" :class="`level-${line.level} src-${line.source}`">
@@ -62,7 +65,7 @@ onUnmounted(() => {
         <span class="log-src">{{ line.source === 'acme' ? 'ACME' : 'SYS' }}</span>
         <span class="log-msg">{{ line.message }}</span>
       </div>
-      <div v-if="lines.length === 0" class="log-empty">暂无日志。签发 / 续期时，acme.sh 的实时输出会显示在这里。</div>
+      <div v-if="lines.length === 0" class="log-empty">{{ t('logs.emptyTip') }}</div>
     </div>
   </div>
 </template>
@@ -99,16 +102,16 @@ onUnmounted(() => {
   font-weight: 600;
 }
 .src-acme .log-src {
-  color: #67c23a;
+  color: var(--el-color-success);
 }
 .src-system .log-src {
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 .level-warn .log-msg {
-  color: #e6a23c;
+  color: var(--el-color-warning);
 }
 .level-error .log-msg {
-  color: #f56c6c;
+  color: var(--el-color-danger);
 }
 .log-empty {
   color: #5a6a7d;

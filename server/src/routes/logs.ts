@@ -43,7 +43,7 @@ export async function logRoutes(app: FastifyInstance): Promise<void> {
     return {
       ok: true,
       ...result,
-      message: `已删除 ${result.logsDeleted} 条日志、${result.sessionsPurged} 条过期会话${
+      message: `已删除 ${result.logsDeleted} 条日志、${result.auditDeleted} 条审计记录、${result.sessionsPurged} 条过期会话${
         result.acmeLogRotated ? '，acme.sh 运行日志已轮转' : ''
       }`,
     };

@@ -7,6 +7,7 @@ import { getLogRetentionDays, logEvent, runLogRetention } from '../services/logg
 import { getNotifyConfig, sendNotification, type NotifyEvent } from '../services/notifier.js';
 import { createBackup } from '../services/backup.js';
 import { prepareRestore } from '../services/restore.js';
+import { logAudit } from '../services/audit.js';
 
 /** 与 DNS 凭据一致的脱敏哨兵：保存时值等于它则保留原值 */
 const MASK = '••••••••';
@@ -160,6 +161,12 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
         names.length > 0 ? `通知推送已启用（${names.join('、')}）` : '通知推送已全部停用',
       );
     }
+    const changed = [
+      body.accountEmail !== undefined ? '账户邮箱' : '',
+      body.logRetentionDays !== undefined ? '日志保留天数' : '',
+      body.notify !== undefined ? '通知推送' : '',
+    ].filter(Boolean);
+    if (changed.length > 0) logAudit(req, 'settings.update', `更新设置：${changed.join('、')}`);
     return { ok: true };
   });
 
@@ -248,6 +255,7 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
       'warn',
       `管理员 ${req.user!.username} 上传${scope === 'full' ? '完整' : '仅配置'}备份并触发恢复（留底 ${safety}），服务即将重启`,
     );
+    logAudit(req, 'backup.restore', `上传${scope === 'full' ? '完整' : '仅配置'}备份并触发恢复（留底 ${safety}）`);
     // 留出响应送达时间再退出，容器 restart 策略会拉起新进程完成落位
     setTimeout(() => process.exit(0), 500);
     return { ok: true, message: `备份校验通过，服务正在重启完成恢复；恢复前的自动留底：${safety}。` };

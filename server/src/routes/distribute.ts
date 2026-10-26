@@ -1,13 +1,15 @@
 import fs from 'node:fs';
 import crypto from 'node:crypto';
+import tls from 'node:tls';
 import type { FastifyInstance } from 'fastify';
 import { desc, eq, sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { certificates, distributeTargets } from '../db/schema.js';
-import { filesFor } from '../services/certificates.js';
+import { filesFor, readCertInfo } from '../services/certificates.js';
 import { getDistributeToken, setSetting } from '../services/settings.js';
 import { logEvent } from '../services/logger.js';
 import { type NotifyEvent, notifyQuietly } from '../services/notifier.js';
+import { logAudit } from '../services/audit.js';
 
 /** 同一主域名有多张证书时取最新一张，有文件路径的优先 */
 function certByDomain(domain: string) {
@@ -25,61 +27,111 @@ function upsertDistributeTarget(
   domain: string,
   ip: string,
   action: 'install' | 'sync',
-  extra?: { reloadMode?: string; container?: string; certDir?: string; status?: string; message?: string },
+  extra?: {
+    reloadMode?: string;
+    container?: string;
+    certDir?: string;
+    status?: string;
+    message?: string;
+    hostname?: string;
+  },
 ): void {
   const now = new Date().toISOString();
   const ipLabel = ip || '未知';
   try {
     if (action === 'install') {
+      const insertValues: Record<string, unknown> = {
+        primaryDomain: domain,
+        ip: ipLabel,
+        reloadMode: extra?.reloadMode ?? null,
+        container: extra?.container || null,
+        certDir: extra?.certDir ?? null,
+        firstSeenAt: now,
+        createdAt: now,
+        updatedAt: now,
+      };
+      const conflictSet: Record<string, unknown> = {
+        reloadMode: extra?.reloadMode ?? null,
+        container: extra?.container || null,
+        certDir: extra?.certDir ?? null,
+        updatedAt: now,
+      };
+      if (extra?.hostname) {
+        insertValues.hostname = extra.hostname;
+        conflictSet.hostname = extra.hostname;
+      }
       db.insert(distributeTargets)
-        .values({
-          primaryDomain: domain,
-          ip: ipLabel,
-          reloadMode: extra?.reloadMode ?? null,
-          container: extra?.container || null,
-          certDir: extra?.certDir ?? null,
-          firstSeenAt: now,
-          createdAt: now,
-          updatedAt: now,
-        })
+        .values(insertValues as typeof distributeTargets.$inferInsert)
         .onConflictDoUpdate({
           target: [distributeTargets.primaryDomain, distributeTargets.ip],
-          set: {
-            reloadMode: extra?.reloadMode ?? null,
-            container: extra?.container || null,
-            certDir: extra?.certDir ?? null,
-            updatedAt: now,
-          },
+          set: conflictSet,
         })
         .run();
     } else {
+      const insertValues: Record<string, unknown> = {
+        primaryDomain: domain,
+        ip: ipLabel,
+        firstSeenAt: now,
+        lastSyncAt: now,
+        lastSyncStatus: extra?.status ?? 'success',
+        lastSyncMessage: extra?.message ?? null,
+        syncCount: 1,
+        createdAt: now,
+        updatedAt: now,
+      };
+      const conflictSet: Record<string, unknown> = {
+        lastSyncAt: now,
+        lastSyncStatus: extra?.status ?? 'success',
+        lastSyncMessage: extra?.message ?? null,
+        syncCount: sql`${distributeTargets.syncCount} + 1`,
+        updatedAt: now,
+      };
+      if (extra?.hostname) {
+        insertValues.hostname = extra.hostname;
+        conflictSet.hostname = extra.hostname;
+      }
       db.insert(distributeTargets)
-        .values({
-          primaryDomain: domain,
-          ip: ipLabel,
-          firstSeenAt: now,
-          lastSyncAt: now,
-          lastSyncStatus: extra?.status ?? 'success',
-          lastSyncMessage: extra?.message ?? null,
-          syncCount: 1,
-          createdAt: now,
-          updatedAt: now,
-        })
+        .values(insertValues as typeof distributeTargets.$inferInsert)
         .onConflictDoUpdate({
           target: [distributeTargets.primaryDomain, distributeTargets.ip],
-          set: {
-            lastSyncAt: now,
-            lastSyncStatus: extra?.status ?? 'success',
-            lastSyncMessage: extra?.message ?? null,
-            syncCount: sql`${distributeTargets.syncCount} + 1`,
-            updatedAt: now,
-          },
+          set: conflictSet,
         })
         .run();
     }
   } catch (err) {
     console.error('failed to upsert distribute target:', err);
   }
+}
+
+/** 指纹比较前的规范化：去冒号、统一大写 */
+function normalizeFingerprint(fp: string): string {
+  return fp.replace(/:/g, '').toUpperCase();
+}
+
+/** 连接目标机获取实际提供的证书指纹（5 秒超时，不校验证书链有效性） */
+function probeTargetCert(
+  host: string,
+  port: number,
+  servername: string,
+): Promise<{ ok: true; fingerprint: string } | { ok: false; error: string }> {
+  return new Promise((resolve) => {
+    const socket = tls.connect(
+      { host, port, servername, rejectUnauthorized: false, timeout: 5000 },
+      () => {
+        const cert = socket.getPeerCertificate();
+        socket.destroy();
+        if (!cert || !cert.fingerprint256) resolve({ ok: false, error: '连接成功但未获取到证书' });
+        else resolve({ ok: true, fingerprint: cert.fingerprint256 });
+      },
+    );
+    socket.on('timeout', () => {
+      socket.destroy();
+      resolve({ ok: false, error: '连接超时（5 秒）' });
+    });
+    socket.on('error', (err) => {
+      resolve({ ok: false, error: err.message });
+    });
+  });
 }
 
 /** 目标机器上的同步脚本：读 /etc/acme-distribute/*.conf，逐域名拉取，内容有变化才 reload。
@@ -100,7 +152,7 @@ NGINX_BIN="\$(command -v nginx 2>/dev/null || echo /usr/sbin/nginx)"
 # 向管理机上报同步结果（best-effort，失败不影响同步）
 report_sync() {
   curl -fsS -X POST -H "Authorization: Bearer \$TOKEN" \\
-    "\$MANAGER/api/distribute/report?domain=\$DOMAIN&action=sync&status=\$1" || true
+    "\$MANAGER/api/distribute/report?domain=\$DOMAIN&action=sync&status=\$1&hostname=\$(hostname 2>/dev/null || echo '')" || true
 }
 
 for conf in /etc/acme-distribute/*.conf; do
@@ -237,7 +289,7 @@ echo "→ 立即同步一次 \$DOMAIN …"
 
 # 向管理机上报本机配置（best-effort，失败不影响安装）
 curl -fsS -X POST -H "Authorization: Bearer \$TOKEN" \\
-  "\$MANAGER/api/distribute/report?domain=\$DOMAIN&action=install&reloadMode=\$RELOAD_MODE&container=\$CONTAINER&certDir=\$CERT_DIR" || true
+  "\$MANAGER/api/distribute/report?domain=\$DOMAIN&action=install&reloadMode=\$RELOAD_MODE&container=\$CONTAINER&certDir=\$CERT_DIR&hostname=\$(hostname 2>/dev/null || echo '')" || true
 
 echo
 echo '安装完成：'
@@ -265,12 +317,14 @@ export async function distributeRoutes(app: FastifyInstance): Promise<void> {
       had ? 'warn' : 'info',
       `分发 Token 已${had ? '重新生成（旧 Token 立即失效）' : '创建'}（操作者 ${req.user!.username}）`,
     );
+    logAudit(req, 'distribute.token_create', `分发 Token 已${had ? '重新生成' : '创建'}（操作者 ${req.user!.username}）`);
     return { token };
   });
 
   app.delete('/distribute/token', async (req) => {
     setSetting('distributeToken', '');
     logEvent('warn', `分发 Token 已吊销（操作者 ${req.user!.username}），所有机器的自动同步将失败`);
+    logAudit(req, 'distribute.token_revoke', `分发 Token 已吊销（操作者 ${req.user!.username}）`);
     return { ok: true };
   });
 
@@ -297,7 +351,7 @@ export async function distributeRoutes(app: FastifyInstance): Promise<void> {
 
   /** 目标机上报安装配置或同步结果（认证钩子按 Bearer Token 放行） */
   app.post('/distribute/report', async (req, reply) => {
-    const { domain, action, reloadMode, container, certDir, status, message } = (req.query ?? {}) as {
+    const { domain, action, reloadMode, container, certDir, status, message, hostname } = (req.query ?? {}) as {
       domain?: string;
       action?: string;
       reloadMode?: string;
@@ -305,6 +359,7 @@ export async function distributeRoutes(app: FastifyInstance): Promise<void> {
       certDir?: string;
       status?: string;
       message?: string;
+      hostname?: string;
     };
     if (!domain || !action) return reply.code(400).send({ error: '缺少 domain 或 action 参数' });
     if (action !== 'install' && action !== 'sync') {
@@ -327,7 +382,7 @@ export async function distributeRoutes(app: FastifyInstance): Promise<void> {
           title: '❌ [Acme Manager] 证书分发同步失败',
           message: [
             `域名：${normalizedDomain}`,
-            `目标服务器：${ip || '未知'}`,
+            `目标服务器：${hostname || ip || '未知'}`,
             `错误：${message || '同步失败（详情见目标机 /var/log/acme-distribute.log）'}`,
           ].join('\n'),
           ok: false,
@@ -344,6 +399,7 @@ export async function distributeRoutes(app: FastifyInstance): Promise<void> {
       certDir,
       status,
       message,
+      hostname: hostname?.trim() || undefined,
     });
     return { ok: true };
   });
@@ -402,7 +458,11 @@ export async function distributeRoutes(app: FastifyInstance): Promise<void> {
     if (req.user!.role !== 'admin') return reply.code(403).send({ error: '需要管理员权限' });
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) return reply.code(400).send({ error: '无效的 ID' });
+    const target = db.select().from(distributeTargets).where(eq(distributeTargets.id, id)).all()[0];
     db.delete(distributeTargets).where(eq(distributeTargets.id, id)).run();
+    if (target) {
+      logAudit(req, 'distribute.target_delete', `删除分发目标 ${target.primaryDomain} @ ${target.ip}`);
+    }
     return { ok: true };
   });
 
@@ -418,5 +478,53 @@ export async function distributeRoutes(app: FastifyInstance): Promise<void> {
       .where(eq(distributeTargets.id, id))
       .run();
     return { ok: true };
+  });
+
+  /** 在线检测：连接目标机端口，比对实际提供的证书指纹与管理机证书是否一致（需管理员会话认证） */
+  app.post<{ Params: { id: string } }>('/distribute/targets/:id/probe', async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return reply.code(400).send({ error: '无效的 ID' });
+    const target = db.select().from(distributeTargets).where(eq(distributeTargets.id, id)).all()[0];
+    if (!target) return reply.code(404).send({ error: '分发目标不存在' });
+    if (!target.ip || target.ip === '未知') {
+      return reply.code(400).send({ error: '该目标缺少 IP，无法检测' });
+    }
+    const portRaw = Number((req.query as { port?: string }).port ?? 443);
+    const port = Number.isInteger(portRaw) && portRaw >= 1 && portRaw <= 65535 ? portRaw : 443;
+
+    // 通配符域名不能作为 SNI，取基础域名
+    const servername = target.primaryDomain.replace(/^\*\./, '');
+
+    const managedCert = certByDomain(target.primaryDomain);
+    const managedInfo = managedCert ? readCertInfo(managedCert) : null;
+
+    const started = Date.now();
+    const result = await probeTargetCert(target.ip, port, servername);
+    const elapsed = Date.now() - started;
+
+    let status: 'match' | 'mismatch' | 'unreachable';
+    let message: string;
+    if (!result.ok) {
+      status = 'unreachable';
+      message = result.error;
+    } else if (!managedInfo) {
+      status = 'unreachable';
+      message = `已取到目标机证书（${result.fingerprint}），但管理机侧无该域名的有效证书可对比`;
+    } else if (normalizeFingerprint(result.fingerprint) === normalizeFingerprint(managedInfo.fingerprint256)) {
+      status = 'match';
+      message = `指纹一致：${result.fingerprint}（${elapsed}ms）`;
+    } else {
+      status = 'mismatch';
+      message = `目标机实际证书与管理机不一致（目标机 ${result.fingerprint}，管理机 ${managedInfo.fingerprint256}）`;
+    }
+
+    const now = new Date().toISOString();
+    db.update(distributeTargets)
+      .set({ lastProbeAt: now, lastProbeStatus: status, lastProbeMessage: message, updatedAt: now })
+      .where(eq(distributeTargets.id, id))
+      .run();
+    logAudit(req, 'distribute.probe', `${target.primaryDomain} @ ${target.ip}:${port} → ${status}`);
+
+    return { status, message, probeAt: now };
   });
 }

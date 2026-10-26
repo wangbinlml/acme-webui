@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { api } from '../api';
 import type { UserView } from '../types';
 import { currentUser } from '../auth';
 import { errMessage, formatDate } from '../utils';
 
+const { t } = useI18n();
 const users = ref<UserView[]>([]);
 const loading = ref(true);
 
@@ -42,7 +44,7 @@ async function submit(): Promise<void> {
   submitting.value = true;
   try {
     await api.createUser({ username: form.username.trim(), password: form.password, role: form.role });
-    ElMessage.success('用户已创建');
+    ElMessage.success(t('users.userCreated'));
     dialogVisible.value = false;
     await refresh();
   } catch (e) {
@@ -56,7 +58,9 @@ async function changeRole(row: UserView, role: string): Promise<void> {
   if (row.id === currentUser.value?.id) return; // 不改自己的角色
   try {
     await api.updateUser(row.id, { role });
-    ElMessage.success(`已将 ${row.username} 的角色改为${role === 'admin' ? '管理员' : '只读'}`);
+    ElMessage.success(
+      t('users.roleChanged', { name: row.username, role: role === 'admin' ? t('users.roleAdmin') : t('users.roleViewer') }),
+    );
     await refresh();
   } catch (e) {
     ElMessage.error(errMessage(e));
@@ -75,7 +79,7 @@ async function submitReset(): Promise<void> {
   resetting.value = true;
   try {
     await api.updateUser(resetTarget.value.id, { password: resetPassword.value });
-    ElMessage.success(`已重置 ${resetTarget.value.username} 的密码`);
+    ElMessage.success(t('users.pwdReset', { name: resetTarget.value.username }));
     resetVisible.value = false;
   } catch (e) {
     ElMessage.error(errMessage(e));
@@ -86,13 +90,13 @@ async function submitReset(): Promise<void> {
 
 async function remove(row: UserView): Promise<void> {
   await ElMessageBox.confirm(
-    `删除用户「${row.username}」？该账号会立即下线。`,
-    '删除用户',
-    { type: 'error', confirmButtonText: '删除' },
+    t('users.deleteConfirm', { name: row.username }),
+    t('users.deleteTitle'),
+    { type: 'error', confirmButtonText: t('users.delete') },
   );
   try {
     await api.deleteUser(row.id);
-    ElMessage.success('已删除');
+    ElMessage.success(t('users.deleted'));
     await refresh();
   } catch (e) {
     ElMessage.error(errMessage(e));
@@ -104,18 +108,18 @@ async function remove(row: UserView): Promise<void> {
   <el-card shadow="never">
     <template #header>
       <div class="card-header">
-        <span>用户</span>
-        <el-button type="primary" icon="Plus" @click="openCreate">添加用户</el-button>
+        <span>{{ t('users.title') }}</span>
+        <el-button type="primary" icon="Plus" @click="openCreate">{{ t('users.add') }}</el-button>
       </div>
     </template>
     <el-table v-loading="loading" :data="users">
-      <el-table-column label="用户名" min-width="180">
+      <el-table-column :label="t('users.colUsername')" min-width="180">
         <template #default="{ row }">
           {{ row.username }}
-          <el-tag v-if="row.id === currentUser?.id" size="small" class="self-tag">当前登录</el-tag>
+          <el-tag v-if="row.id === currentUser?.id" size="small" class="self-tag">{{ t('users.current') }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="角色" width="200">
+      <el-table-column :label="t('users.colRole')" width="200">
         <template #default="{ row }">
           <el-select
             :model-value="row.role"
@@ -123,52 +127,52 @@ async function remove(row: UserView): Promise<void> {
             style="width: 140px"
             @change="(role: string) => changeRole(row, role)"
           >
-            <el-option label="管理员" value="admin" />
-            <el-option label="只读（viewer）" value="viewer" />
+            <el-option :label="t('users.roleAdmin')" value="admin" />
+            <el-option :label="t('users.roleViewer')" value="viewer" />
           </el-select>
         </template>
       </el-table-column>
-      <el-table-column label="创建时间" min-width="180">
+      <el-table-column :label="t('users.colCreatedAt')" min-width="180">
         <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="180" fixed="right">
+      <el-table-column :label="t('users.colActions')" width="180" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" size="small" @click="openReset(row)">重置密码</el-button>
+          <el-button link type="primary" size="small" @click="openReset(row)">{{ t('users.resetPwd') }}</el-button>
           <el-button link type="danger" size="small" :disabled="row.id === currentUser?.id" @click="remove(row)">
-            删除
+            {{ t('users.delete') }}
           </el-button>
         </template>
       </el-table-column>
     </el-table>
 
-    <el-dialog v-model="dialogVisible" title="添加用户" width="440px">
+    <el-dialog v-model="dialogVisible" :title="t('users.addTitle')" width="440px">
       <el-form label-width="90px" label-position="left">
-        <el-form-item label="用户名" required>
-          <el-input v-model="form.username" placeholder="2-32 个字符" />
+        <el-form-item :label="t('users.formUsername')" required>
+          <el-input v-model="form.username" :placeholder="t('users.formUsernamePlaceholder')" />
         </el-form-item>
-        <el-form-item label="密码" required>
-          <el-input v-model="form.password" type="password" show-password placeholder="6-128 位" />
+        <el-form-item :label="t('users.formPassword')" required>
+          <el-input v-model="form.password" type="password" show-password :placeholder="t('users.formPasswordPlaceholder')" />
         </el-form-item>
-        <el-form-item label="角色">
+        <el-form-item :label="t('users.formRole')">
           <el-radio-group v-model="form.role">
-            <el-radio value="viewer">只读（viewer）</el-radio>
-            <el-radio value="admin">管理员</el-radio>
+            <el-radio value="viewer">{{ t('users.roleViewer') }}</el-radio>
+            <el-radio value="admin">{{ t('users.roleAdmin') }}</el-radio>
           </el-radio-group>
-          <div class="form-tip">只读用户可查看全部页面，但不能创建 / 续期 / 删除 / 修改配置</div>
+          <div class="form-tip">{{ t('users.roleViewerTip') }}</div>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="submit">创建</el-button>
+        <el-button @click="dialogVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="submitting" @click="submit">{{ t('users.createBtn') }}</el-button>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="resetVisible" :title="`重置 ${resetTarget?.username ?? ''} 的密码`" width="400px">
-      <el-input v-model="resetPassword" type="password" show-password placeholder="新密码（6-128 位）" @keyup.enter="submitReset" />
-      <div class="form-tip">重置后该用户的所有登录会话会立即下线</div>
+    <el-dialog v-model="resetVisible" :title="t('users.resetTitle', { name: resetTarget?.username ?? '' })" width="400px">
+      <el-input v-model="resetPassword" type="password" show-password :placeholder="t('users.formPasswordPlaceholder')" @keyup.enter="submitReset" />
+      <div class="form-tip">{{ t('users.resetTip') }}</div>
       <template #footer>
-        <el-button @click="resetVisible = false">取消</el-button>
-        <el-button type="primary" :loading="resetting" @click="submitReset">重置</el-button>
+        <el-button @click="resetVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="resetting" @click="submitReset">{{ t('users.resetBtn') }}</el-button>
       </template>
     </el-dialog>
   </el-card>
@@ -185,7 +189,7 @@ async function remove(row: UserView): Promise<void> {
 }
 .form-tip {
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   line-height: 1.6;
   width: 100%;
 }

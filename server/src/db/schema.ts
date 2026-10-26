@@ -1,4 +1,4 @@
-import { integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 export const certificates = sqliteTable('certificates', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -93,10 +93,35 @@ export const distributeTargets = sqliteTable(
     syncCount: integer('sync_count').notNull().default(0),
     /** 逗号分隔的标签（如 "生产,集群A"） */
     tags: text('tags'),
+    /** 目标机主机名（report 上报） */
+    hostname: text('hostname'),
+    /** 最后在线检测时间 */
+    lastProbeAt: text('last_probe_at'),
+    /** match | mismatch | unreachable */
+    lastProbeStatus: text('last_probe_status'),
+    lastProbeMessage: text('last_probe_message'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
   (table) => ({
     domainIpIdx: uniqueIndex('distribute_targets_domain_ip_idx').on(table.primaryDomain, table.ip),
+  }),
+);
+
+export const auditLogs = sqliteTable(
+  'audit_logs',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    /** 操作者用户名（未登录场景为 '-'） */
+    username: text('username').notNull(),
+    /** 动作标识，如 user.login / cert.delete / distribute.token_create */
+    action: text('action').notNull(),
+    /** 人类可读的详情 */
+    detail: text('detail'),
+    ip: text('ip'),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => ({
+    createdAtIdx: index('audit_logs_created_at_idx').on(table.createdAt),
   }),
 );

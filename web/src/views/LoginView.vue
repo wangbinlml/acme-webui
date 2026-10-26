@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { ElMessage } from 'element-plus';
 import { api } from '../api';
 import { currentUser, fetchMe } from '../auth';
@@ -9,6 +10,7 @@ import { errMessage } from '../utils';
 
 const route = useRoute();
 const router = useRouter();
+const { t } = useI18n();
 
 /** setup = 首次部署初始化管理员；login = 常规登录 */
 const mode = ref<'loading' | 'setup' | 'login'>('loading');
@@ -27,14 +29,14 @@ onMounted(async () => {
 
 async function submit(): Promise<void> {
   if (mode.value === 'setup' && form.password !== form.confirm) {
-    ElMessage.error('两次输入的密码不一致');
+    ElMessage.error(t('login.passwordMismatch'));
     return;
   }
   submitting.value = true;
   try {
     if (mode.value === 'setup') {
       await api.setup({ username: form.username.trim(), password: form.password });
-      ElMessage.success('管理员已创建');
+      ElMessage.success(t('login.adminCreated'));
     } else {
       await api.login({ username: form.username.trim(), password: form.password });
     }
@@ -62,26 +64,26 @@ async function submit(): Promise<void> {
       </template>
 
       <template v-else>
-        <div class="mode-title">{{ mode === 'setup' ? '初始化管理员' : '登录' }}</div>
+        <div class="mode-title">{{ mode === 'setup' ? t('login.setupTitle') : t('login.loginTitle') }}</div>
         <el-alert
           v-if="mode === 'setup'"
           type="info"
           :closable="false"
           class="setup-tip"
-          title="首次使用，请先创建管理员账号"
+          :title="t('login.setupAlert')"
         />
         <el-form label-position="top" @submit.prevent>
-          <el-form-item label="用户名">
-            <el-input v-model="form.username" placeholder="2-32 个字符" @keyup.enter="submit" />
+          <el-form-item :label="t('login.username')">
+            <el-input v-model="form.username" :placeholder="t('login.usernamePlaceholder')" @keyup.enter="submit" />
           </el-form-item>
-          <el-form-item label="密码">
+          <el-form-item :label="t('login.password')">
             <el-input v-model="form.password" type="password" show-password @keyup.enter="submit" />
           </el-form-item>
-          <el-form-item v-if="mode === 'setup'" label="确认密码">
+          <el-form-item v-if="mode === 'setup'" :label="t('login.confirmPassword')">
             <el-input v-model="form.confirm" type="password" show-password @keyup.enter="submit" />
           </el-form-item>
           <el-button type="primary" class="submit" :loading="submitting" @click="submit">
-            {{ mode === 'setup' ? '创建并登录' : '登录' }}
+            {{ mode === 'setup' ? t('login.setupBtn') : t('login.loginBtn') }}
           </el-button>
         </el-form>
       </template>
@@ -124,7 +126,7 @@ async function submit(): Promise<void> {
 }
 .mode-title {
   font-size: 14px;
-  color: #606266;
+  color: var(--el-text-color-regular);
   margin-bottom: 12px;
 }
 .setup-tip {

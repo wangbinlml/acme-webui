@@ -1,5 +1,6 @@
 import type {
   AuthUser,
+  AuditLog,
   CertificateView,
   CertInfo,
   DashboardData,
@@ -144,6 +145,20 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ tags }),
     }),
+  probeDistributeTarget: (id: number, port?: number) =>
+    request<{ status: string; message: string; probeAt: string }>(
+      `/api/distribute/targets/${id}/probe${port ? `?port=${port}` : ''}`,
+      { method: 'POST' },
+    ),
+  listAuditLogs: (params: { limit?: number; username?: string; action?: string } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.limit) qs.set('limit', String(params.limit));
+    if (params.username) qs.set('username', params.username);
+    if (params.action) qs.set('action', params.action);
+    const suffix = qs.size > 0 ? `?${qs.toString()}` : '';
+    return request<{ logs: AuditLog[] }>(`/api/audit${suffix}`);
+  },
+  listAuditActions: () => request<{ actions: string[] }>('/api/audit/actions'),
   runRenewScan: () => request<{ started: boolean; message: string }>('/api/renew/run', { method: 'POST' }),
 
   health: () => request<{ ok: boolean; version: string; acmeAvailable: boolean }>('/api/health'),

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { lt } from 'drizzle-orm';
 import { db } from '../db/index.js';
-import { logs, sessions } from '../db/schema.js';
+import { auditLogs, logs, sessions } from '../db/schema.js';
 import { config } from '../config.js';
 import { getSetting } from './settings.js';
 
@@ -57,6 +57,7 @@ export function logEvent(level: LogLevel, message: string, certificateId?: numbe
 
 export interface RetentionResult {
   logsDeleted: number;
+  auditDeleted: number;
   sessionsPurged: number;
   acmeLogRotated: boolean;
 }
@@ -88,20 +89,22 @@ export function rotateAcmeLog(): boolean {
 export function runLogRetention(): RetentionResult {
   const days = getLogRetentionDays();
   let logsDeleted = 0;
+  let auditDeleted = 0;
   if (days > 0) {
     const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
     logsDeleted = db.delete(logs).where(lt(logs.createdAt, cutoff)).run().changes;
+    auditDeleted = db.delete(auditLogs).where(lt(auditLogs.createdAt, cutoff)).run().changes;
   }
   const sessionsPurged = db
     .delete(sessions)
     .where(lt(sessions.expiresAt, new Date().toISOString()))
     .run().changes;
   const acmeLogRotated = rotateAcmeLog();
-  if (logsDeleted > 0 || sessionsPurged > 0 || acmeLogRotated) {
+  if (logsDeleted > 0 || auditDeleted > 0 || sessionsPurged > 0 || acmeLogRotated) {
     logEvent(
       'info',
-      `日志清理：删除 ${logsDeleted} 条日志、${sessionsPurged} 条过期会话${acmeLogRotated ? '，acme.sh 运行日志已轮转' : ''}`,
+      `日志清理：删除 ${logsDeleted} 条日志、${auditDeleted} 条审计记录、${sessionsPurged} 条过期会话${acmeLogRotated ? '，acme.sh 运行日志已轮转' : ''}`,
     );
   }
-  return { logsDeleted, sessionsPurged, acmeLogRotated };
+  return { logsDeleted, auditDeleted, sessionsPurged, acmeLogRotated };
 }

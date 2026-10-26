@@ -18,6 +18,7 @@ import { certificateRoutes } from './routes/certificates.js';
 import { dnsProviderRoutes } from './routes/dns-providers.js';
 import { dashboardRoutes } from './routes/dashboard.js';
 import { logRoutes } from './routes/logs.js';
+import { auditRoutes } from './routes/audit.js';
 import { settingsRoutes } from './routes/settings.js';
 import { distributeRoutes } from './routes/distribute.js';
 import { eventRoutes } from './routes/events.js';
@@ -95,6 +96,7 @@ async function main(): Promise<void> {
   await app.register(certificateRoutes, { prefix: '/api' });
   await app.register(dnsProviderRoutes, { prefix: '/api' });
   await app.register(logRoutes, { prefix: '/api' });
+  await app.register(auditRoutes, { prefix: '/api' });
   await app.register(settingsRoutes, { prefix: '/api' });
   await app.register(distributeRoutes, { prefix: '/api' });
   await app.register(eventRoutes, { prefix: '/api' });

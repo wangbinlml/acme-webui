@@ -15,6 +15,7 @@ import {
   verifyPassword,
 } from '../services/auth.js';
 import { logEvent } from '../services/logger.js';
+import { logAudit } from '../services/audit.js';
 
 function sessionCookie(token: string, maxAge: number): string {
   return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}`;
@@ -53,6 +54,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const session = createSession(user.id);
     reply.header('set-cookie', sessionCookie(session.token, session.maxAge));
     logEvent('info', `初始管理员 ${username} 已创建`);
+    logAudit({ user: { username }, ip: req.ip }, 'user.setup', `初始化管理员 ${username}`);
     return { user: { id: user.id, username: user.username, role: user.role } };
   });
 
@@ -67,12 +69,14 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const row = getUserByUsername(name);
     if (!row || !verifyPassword(typeof password === 'string' ? password : '', row.passwordHash)) {
       recordLoginFailure(name, req.ip);
+      logAudit({ user: { username: name || '-' }, ip: req.ip }, 'user.login_failed', `用户 ${name || '-'} 登录失败`);
       return reply.code(401).send({ error: '用户名或密码错误' });
     }
     clearLoginFailures(name, req.ip);
     const session = createSession(row.id);
     reply.header('set-cookie', sessionCookie(session.token, session.maxAge));
     logEvent('info', `用户 ${name} 登录`);
+    logAudit({ user: { username: name }, ip: req.ip }, 'user.login', `用户 ${name} 登录成功`);
     return { user: { id: row.id, username: row.username, role: row.role } };
   });
 
@@ -80,6 +84,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const token = tokenOf(req);
     if (token) destroySession(token);
     reply.header('set-cookie', clearCookie());
+    if (req.user) logAudit(req, 'user.logout', `用户 ${req.user.username} 退出登录`);
     return { ok: true };
   });
 
@@ -100,6 +105,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const session = createSession(user.id);
     reply.header('set-cookie', sessionCookie(session.token, session.maxAge));
     logEvent('info', `用户 ${user.username} 修改了密码`);
+    logAudit(req, 'user.password_change', `用户 ${user.username} 修改了自己的密码`);
     return { ok: true };
   });
 }
